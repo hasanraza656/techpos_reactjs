@@ -34,6 +34,8 @@ export type Action = {
   submit?: string;
   description?: string;
   reason?: string;
+  /** Private proof download shown in the dialog; omitted when no proof is stored. */
+  proofUrl?: string;
 };
 export type Identity = {
   user: Me["user"];

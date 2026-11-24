@@ -397,6 +397,10 @@ function CalculationSettings({ onSaved }: { onSaved: () => void }) {
       setVersion(result.version);
       return result;
     },
+    // queryFn hydrates the form and version: run it on every dialog mount so a
+    // cached entry cannot leave the dialog loading or submit a stale version.
+    staleTime: Infinity,
+    gcTime: 0,
   });
   const save = useMutation({
     mutationFn: (parameters: Parameters) =>
@@ -578,7 +582,10 @@ function BuiltinAssistant({
             placeholder="Show low-stock products"
           />
         </label>
-        <button className="button mt" disabled={result.isPending}>
+        <button
+          className="button mt"
+          disabled={result.isPending || !branch || (custom && (!from || !to))}
+        >
           <Send size={16} />
           Ask built-in assistant
         </button>
@@ -596,7 +603,7 @@ function BuiltinAssistant({
         </label>
         <button
           className="button secondary report-run"
-          disabled={result.isPending || !branch}
+          disabled={result.isPending || !branch || (custom && (!from || !to))}
           onClick={() => result.mutate(false)}
         >
           Run selected report

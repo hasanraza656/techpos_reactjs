@@ -38,6 +38,8 @@ export function AccessPage({ tenant }: { tenant: boolean }) {
     initial: {
       name: duplicate ? `${role?.name} copy` : (role?.name ?? ""),
       permissions: role?.permissions ?? [],
+      // Platform role saves overwrite description with null when omitted.
+      ...(!tenant && role?.description ? { description: role.description } : {}),
       ...(role && !duplicate ? { version: role.version } : {}),
     },
   });

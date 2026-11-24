@@ -45,6 +45,7 @@ import {
 import { cartTotals, scaled, formatted, linePrice } from "../lib/decimal";
 import {
   defaultShortcuts,
+  migrateShortcuts,
   shortcutLabels,
   useShortcuts,
   validShortcuts,
@@ -164,14 +165,15 @@ export function CashierPage() {
         setFavoriteIds(v?.favorites ?? []);
         setRecent(v?.recent ?? []);
         setCompact(v?.compact ?? false);
-        if (v?.shortcuts) setShortcuts(v.shortcuts);
+        if (v?.shortcuts) setShortcuts(migrateShortcuts(v.shortcuts));
         if (v?.width) setPrintWidth(v.width);
         setHydratedScope(scopeKey);
         if (!tutorial) setDialog("walkthrough");
       })
       .catch(setError)
       .finally(() => db.close());
-    refreshPending();
+    // Count is advisory (the 15 s sync loop refreshes it); never leave the rejection unhandled.
+    refreshPending().catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -314,7 +316,14 @@ export function CashierPage() {
       if (matches.length === 1) {
         const p = matches[0];
         add(p, p.barcodes.find((b) => b.barcode === code)?.quantity ?? "1.000");
-      } else if (products.data?.length === 1) add(products.data[0]);
+      } else if (
+        // Only trust the visible results when they belong to this exact text;
+        // a fast scan can submit before the debounced search catches up.
+        debounced === code &&
+        !products.isPlaceholderData &&
+        products.data?.length === 1
+      )
+        add(products.data[0]);
       else
         setError(
           new Error(
@@ -339,6 +348,14 @@ export function CashierPage() {
     scanner.current?.select();
   }
   function showPayment() {
+    if (!practice && o.setup.data?.shift?.branch !== o.branch) {
+      setError(
+        new Error(
+          "Open a register shift for this branch before taking payment.",
+        ),
+      );
+      return;
+    }
     if (cart.length && !totals.error) {
       setDialog("payment");
       setError(undefined);
@@ -370,15 +387,54 @@ export function CashierPage() {
       lock.current ||
       !totals.value ||
       !o.setup.data ||
-      !cart.length ||
-      (!practice && !o.setup.data?.shift)
+      !cart.length
     )
       return;
     lock.current = true;
     setBusy(true);
     setError(undefined);
     try {
+      if (!practice && o.setup.data.shift?.branch !== o.branch)
+        throw new Error(
+          "Open a register shift for this branch before completing a sale.",
+        );
       const value = totals.value;
+      // Send only canonical decimals the server accepts. A rejected payload is
+      // otherwise queued and becomes an "attention" record after the cart clears.
+      const lines = cart.map((l) => ({
+        ...l,
+        quantity: wireDecimal(
+          l.quantity,
+          3,
+          7,
+          `Quantity for ${l.product.name}`,
+        ),
+        discount: wireDecimal(
+          l.discount,
+          2,
+          10,
+          `Discount for ${l.product.name}`,
+        ),
+      }));
+      const cartDiscount = wireDecimal(discount, 2, 10, "Cart discount");
+      payments = payments.map((p) => {
+        const amount = wireDecimal(p.amount, 2, 10, "Payment amount");
+        if (p.method === "cash") return { method: p.method, amount };
+        const reference = (p.reference ?? "").trim();
+        if (!reference)
+          throw new Error(
+            "External payments need a terminal or bank reference.",
+          );
+        if (reference.length > 120)
+          throw new Error("Payment references must be at most 120 characters.");
+        return { method: p.method, amount, reference };
+      });
+      const zeroCashSale =
+        scaled(value.total) === 0n &&
+        payments.length === 1 &&
+        payments[0].method === "cash";
+      if (!zeroCashSale && payments.some((p) => scaled(p.amount) <= 0n))
+        throw new Error("Each payment amount must be greater than zero.");
       let paid = 0n;
       for (const p of payments) paid += scaled(p.amount);
       if (paid < scaled(value.total))
@@ -397,13 +453,13 @@ export function CashierPage() {
         warehouse: o.warehouse,
         shift: o.setup.data!.shift?.public_id ?? crypto.randomUUID(),
         customer: customer?.public_id ?? null,
-        lines: cart.map((l) => ({
+        lines: lines.map((l) => ({
           product: l.product.public_id,
           quantity: l.quantity,
           discount: l.discount,
           expected_unit_price: linePrice(l.product, customer?.price_tier),
         })),
-        cart_discount: discount,
+        cart_discount: cartDiscount,
         expected_total: value.total,
         payments,
         channel: online ? "online" : "offline",
@@ -425,7 +481,7 @@ export function CashierPage() {
         change_due: formatted(paid - scaled(value.total)),
         amount_tendered: formatted(paid),
         channel: payload.channel ?? "online",
-        lines: cart.map((l, i) => ({
+        lines: lines.map((l, i) => ({
           name: l.product.name,
           sku: l.product.sku,
           quantity: l.quantity,
@@ -478,6 +534,10 @@ export function CashierPage() {
         await syncSales(tenant, user);
         const db = businessStore(tenant, user);
         try {
+          // syncSales joins an in-flight background run, whose queue snapshot
+          // may predate this sale. Run once more if it was never attempted.
+          const queued = await db.outbox.get(saved.id);
+          if (queued && !queued.lastAttemptAt) await syncSales(tenant, user);
           setReceipt((await db.receipts.get(saved.id)) ?? saved);
         } finally {
           db.close();
@@ -1281,6 +1341,8 @@ export function CashierPage() {
             const db = businessStore(tenant, user);
             try {
               await db.metadata.put({ key: "walkthrough-seen", value: true });
+            } catch (e) {
+              setError(e);
             } finally {
               db.close();
             }
@@ -1356,6 +1418,18 @@ export function CashierPage() {
   );
 }
 
+// Canonicalize a cashier-typed decimal ("5." -> "5.000") within the server's digit limits.
+function wireDecimal(
+  value: string,
+  precision: number,
+  wholeDigits: number,
+  label: string,
+) {
+  const text = formatted(scaled(value || "0", precision), precision);
+  if (text.startsWith("-") || text.split(".")[0].length > wholeDigits)
+    throw new Error(`${label} is outside the supported range.`);
+  return text;
+}
 function PaymentForm({
   total,
   currency,
@@ -1440,6 +1514,7 @@ function PaymentForm({
               <input
                 aria-label={`Transaction reference ${i + 1}`}
                 required
+                maxLength={120}
                 value={row.reference ?? ""}
                 onChange={(e) => update(i, { reference: e.target.value })}
               />
@@ -1500,7 +1575,7 @@ function PaymentForm({
       >
         + Split payment
       </button>
-      <div className="payment-amount">
+      <div className="payment-amount" role="status" aria-live="polite">
         <span>{change >= 0n ? "Change due" : "Still due"}</span>
         <strong>{formatted(change < 0n ? -change : change)}</strong>
       </div>
@@ -1523,10 +1598,15 @@ function CustomerLookup({
   onChoose: (c: Customer | null) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setTerm(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
   const customers = useQuery({
-    queryKey: ["pos-customers", branch, search],
+    queryKey: ["pos-customers", branch, term],
     queryFn: () =>
-      ops<Page<Customer>>("customers?" + query({ branch, q: search })),
+      ops<Page<Customer>>("customers?" + query({ branch, q: term })),
     enabled: online,
   });
   return (
@@ -1639,11 +1719,21 @@ function HeldCarts({
             payload: {
               lines: cart.map((l) => ({
                 product: l.product.public_id,
-                quantity: l.quantity,
-                discount: l.discount,
+                quantity: wireDecimal(
+                  l.quantity,
+                  3,
+                  7,
+                  `Quantity for ${l.product.name}`,
+                ),
+                discount: wireDecimal(
+                  l.discount,
+                  2,
+                  10,
+                  `Discount for ${l.product.name}`,
+                ),
               })),
               customer: customer?.public_id ?? null,
-              cart_discount: discount,
+              cart_discount: wireDecimal(discount, 2, 10, "Cart discount"),
             },
           }),
         );

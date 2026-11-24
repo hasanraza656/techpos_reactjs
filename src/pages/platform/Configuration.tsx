@@ -26,8 +26,12 @@ export function PlansPage() {
       <ErrorBox error={q.error ?? registry.error} />
       <div className="platform-role-grid">
         {q.data?.map((plan) => {
-          const limits = plan.limits as Row;
-          const price = ((plan.prices ?? []) as Row[])[0];
+          const limits = (plan.limits ?? {}) as Row;
+          const prices = (plan.prices ?? []) as Row[];
+          // The editor and backend update the monthly PKR price specifically.
+          const price =
+            prices.find((x) => x.currency === "PKR" && x.interval === "month") ??
+            prices[0];
           return (
             <article className="panel" key={value(plan, "key")}>
               <span className="eyebrow">{value(plan, "key")}</span>
@@ -55,7 +59,8 @@ export function PlansPage() {
                         endpoint: `plans/${plan.key}`,
                         method: "PUT",
                         initial: {
-                          ...plan,
+                          name: plan.name,
+                          description: plan.description,
                           amount: price?.amount ?? "0",
                           ...Object.fromEntries(
                             Object.entries(limits).map(([k, v]) => [
@@ -193,7 +198,7 @@ export function SettingsPage() {
           <article key={String(m.id)} className="panel">
             <h3>{value(m, "name")}</h3>
             <Status status={m.active ? "active" : "inactive"} />
-            {Object.entries(m.details as Row).map(([k, v]) => (
+            {Object.entries((m.details ?? {}) as Row).map(([k, v]) => (
               <p key={k}>
                 <small>{title(k)}</small>
                 <strong className="table-subtext">{String(v)}</strong>
@@ -211,7 +216,7 @@ export function SettingsPage() {
                       name: m.name,
                       active: !!m.active,
                       ...Object.fromEntries(
-                        Object.entries(m.details as Row).map(([k, v]) => [
+                        Object.entries((m.details ?? {}) as Row).map(([k, v]) => [
                           "details." + k,
                           v,
                         ]),

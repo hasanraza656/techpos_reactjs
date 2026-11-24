@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
+import { Link } from "react-router-dom";
 import {
   Plus,
   Search,
@@ -133,10 +134,13 @@ export function CatalogPage() {
                 >
                   Add category
                 </button>
-                <button className="button" onClick={() => setEditing(null)}>
-                  <Plus size={17} />
-                  Add product
-                </button>
+                {/* New products need an actual cost, which the server only accepts with products.view_cost. */}
+                {o.business.permissions.includes("products.view_cost") && (
+                  <button className="button" onClick={() => setEditing(null)}>
+                    <Plus size={17} />
+                    Add product
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -536,6 +540,11 @@ function ProductEditor({
       return p;
     },
     enabled: !!id,
+    // queryFn hydrates the form, so it must run on every editor mount (a cached
+    // entry would leave the editor loading forever and carry a stale version),
+    // and must not refetch mid-edit and wipe unsaved input.
+    staleTime: Infinity,
+    gcTime: 0,
   });
   const save = useMutation({
     mutationFn: async (v: ProductForm) => {
@@ -743,7 +752,7 @@ function ProductEditor({
           Active product
         </label>
       </div>
-      {detail.data?.price_history?.length && (
+      {!!detail.data?.price_history?.length && (
         <details className="mt">
           <summary>Price history</summary>
           {detail.data.price_history.map((h, i) => (
@@ -854,8 +863,15 @@ export function AdjustmentForm({
 }
 export function InventoryPage() {
   const o = useOperations();
+  const [page, setPage] = useState(1);
   const data = useQuery({
-    queryKey: ["movements", o.business.tenant.public_id, o.branch, o.warehouse],
+    queryKey: [
+      "movements",
+      o.business.tenant.public_id,
+      o.branch,
+      o.warehouse,
+      page,
+    ],
     queryFn: () =>
       ops<
         Page<{
@@ -870,7 +886,7 @@ export function InventoryPage() {
         }>
       >(
         "inventory/movements?" +
-          query({ branch: o.branch, warehouse: o.warehouse }),
+          query({ branch: o.branch, warehouse: o.warehouse, page }),
       ),
     enabled: o.ready,
   });
@@ -882,10 +898,10 @@ export function InventoryPage() {
         title="Every movement has a story."
         description="An immutable stock trail, with actual cost valuation."
         action={
-          <a className="button secondary" href="/catalog">
+          <Link className="button secondary" to="/catalog">
             <ClipboardList size={17} />
             Manage catalog
-          </a>
+          </Link>
         }
       />
       {o.setup.data && (
@@ -893,8 +909,14 @@ export function InventoryPage() {
           setup={o.setup.data}
           branch={o.branch}
           warehouse={o.warehouse}
-          onBranch={o.setBranch}
-          onWarehouse={o.setWarehouse}
+          onBranch={(v) => {
+            o.setBranch(v);
+            setPage(1);
+          }}
+          onWarehouse={(v) => {
+            o.setWarehouse(v);
+            setPage(1);
+          }}
         />
       )}
       <ErrorBox error={data.error} />
@@ -934,6 +956,27 @@ export function InventoryPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {!!data.data && data.data.last_page > 1 && (
+          <div className="pagination">
+            <button
+              className="button secondary"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              Previous
+            </button>
+            <span>
+              Page {page} of {data.data.last_page}
+            </span>
+            <button
+              className="button secondary"
+              disabled={page >= data.data.last_page}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </button>
           </div>
         )}
       </section>

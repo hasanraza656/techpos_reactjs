@@ -34,6 +34,8 @@ export function CatalogTransfer() {
   const transfer = useMutation({
     mutationFn: async (preview: boolean) => {
       if (!file) throw new Error("Choose a CSV file first.");
+      if (file.size > 2 * 1024 * 1024)
+        throw new Error("Choose a CSV file up to 2 MB (250 products).");
       const body = new FormData();
       body.append("file", file);
       body.append("mode", mode);

@@ -238,6 +238,13 @@ input[type="radio"] {
   flex-shrink: 0;
   box-shadow: none;
 }
+/* `input:focus` removes the outline and the rule above removes the focus
+   ring, so checkboxes/radios had no keyboard focus indicator at all. */
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
 input[type="file"] {
   padding: 9px 12px;
 }
@@ -374,6 +381,7 @@ input[type="file"] {
 .app-layout {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 .skip-link {
   position: fixed;
@@ -1661,6 +1669,11 @@ input[type="file"] {
 .detail-row strong {
   font-size: 15px;
 }
+/* long unbroken values (account numbers, IBANs) must wrap, not widen dialogs */
+.detail-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
 /* ───────────── Tabs & tables ───────────── */
 .tabs {
@@ -1897,6 +1910,8 @@ tbody tr:hover {
   font-size: 15px;
   line-height: 1.35;
   font-weight: 650;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .product-add small {
   color: var(--muted);
@@ -1995,6 +2010,8 @@ tbody tr:hover {
 .cart-line strong {
   font-size: 15px;
   font-weight: 650;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .cart-line small {
   color: var(--muted);
@@ -2173,6 +2190,20 @@ tbody tr:hover {
   font-family: var(--mono);
   font-size: 13px;
   color: var(--text);
+  overflow-wrap: anywhere;
+}
+.receipt table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.receipt td {
+  vertical-align: top;
+}
+.receipt th + th,
+.receipt td + td {
+  text-align: end;
+  white-space: nowrap;
+  padding-inline-start: 8px;
 }
 .receipt header {
   text-align: center;
@@ -2204,6 +2235,15 @@ tbody tr:hover {
   color: var(--warn);
   border-radius: 8px;
 }
+/* On-screen receipt preview (print iframe in lib/printing.ts has its own copy). */
+.receipt-rule {
+  border-top: 1px dashed var(--line-strong);
+  margin: 12px 0;
+}
+.receipt-total {
+  font-size: 18px;
+  font-weight: 700;
+}
 .invitation-card {
   max-width: 560px;
 }
@@ -2232,6 +2272,7 @@ tbody tr:hover {
 .auth-layout {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--surface);
 }
 .auth-story {
@@ -2517,6 +2558,7 @@ tbody tr:hover {
     width: 100%;
     padding: 32px 22px;
     min-height: 100vh;
+    min-height: 100dvh;
   }
   .app-footer {
     padding: 8px 18px 22px;
@@ -2705,12 +2747,12 @@ tbody tr:hover {
 
 /* Guided setup and product media: extend the existing user-authored design tokens. */
 .platform-layout:has(.platform-portal) { max-width: none; margin: 0; padding: 0; }
-.platform-portal { display: flex; min-height: 100vh; background: var(--bg); color: var(--text); }
+.platform-portal { display: flex; min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--text); }
 .platform-sidebar { position: fixed; inset: 0 auto 0 0; width: 270px; background: var(--surface); border-inline-end: 1px solid var(--line); display: flex; flex-direction: column; padding: 26px 16px 0; z-index: 45; }
 .platform-sidebar .brand { margin: 0 12px 22px; }
 .platform-identity-badge { display: flex; align-items: center; gap: 10px; padding: 13px; color: var(--green); background: var(--soft); border-radius: 12px; margin-bottom: 17px; }
 .platform-identity-badge strong { display: block; font-size: 12px; }
-.platform-identity-badge small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.platform-identity-badge small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .platform-sidebar nav { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: 18px; }
 .platform-sidebar nav a,.platform-mobile-nav nav a { display: flex; align-items: center; gap: 12px; text-decoration: none; padding: 11px 12px; border-radius: 9px; color: var(--muted); font-size: 12px; font-weight: 550; margin-bottom: 3px; transition: background 150ms,color 150ms; }
 .platform-sidebar nav a span,.platform-mobile-nav nav a span { flex: 1; }
@@ -2719,25 +2761,25 @@ tbody tr:hover {
 .platform-sidebar > footer,.platform-mobile-nav > footer { display: flex; align-items: center; gap: 10px; padding: 18px 0; border-top: 1px solid var(--line); }
 .platform-sidebar footer > div,.platform-mobile-nav footer > div { flex: 1; min-width: 0; }
 .platform-sidebar footer strong,.platform-mobile-nav footer strong { display: block; font-size: 12px; }
-.platform-sidebar footer small,.platform-mobile-nav footer small { display: block; font-size: 9px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.platform-sidebar footer small,.platform-mobile-nav footer small { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .platform-avatar { width: 34px; height: 34px; background: var(--lime); color: #133a25; border-radius: 50%; display: grid; place-items: center; font-weight: 700; flex-shrink: 0; }
 .platform-body { margin-inline-start: 270px; width: calc(100% - 270px); min-width: 0; display: flex; flex-direction: column; }
 .platform-topbar { min-height: 70px; position: sticky; top: 0; z-index: 35; background: color-mix(in srgb,var(--surface) 94%,transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 12px 34px; }
 .platform-topbar > .row > span { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; }
 .platform-topbar .text-button { font-size: 11px; display: inline-flex; align-items: center; gap: 7px; }
-.platform-topbar .platform-status-dot { font-size: 10px; background: var(--soft); color: var(--green); padding: 5px 10px; border-radius: 20px; white-space: nowrap; }
+.platform-topbar .platform-status-dot { font-size: 11px; background: var(--soft); color: var(--green); padding: 5px 10px; border-radius: 20px; white-space: nowrap; }
 .platform-menu { display: none; }
 .platform-main { padding: 26px 34px 40px; flex: 1; min-width: 0; max-width: 1700px; width: 100%; margin-inline: auto; }
 .platform-scope { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 21px; border: 1px solid var(--line); background: var(--surface); border-radius: 15px; margin-bottom: 30px; }
-.platform-scope .eyebrow { display: block; font-size: 9px; margin: 0 0 4px; }
+.platform-scope .eyebrow { display: block; font-size: 11px; margin: 0 0 4px; }
 .platform-scope strong { display: block; font-size: 14px; }
-.platform-scope small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.platform-scope small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
 .platform-scope-controls { display: flex; gap: 10px; align-items: center; }
 .platform-scope-controls .input-icon { width: 190px; flex: 0 0 190px; }
 .platform-scope-controls input,.platform-scope-controls select { margin: 0; min-height: 40px; font-size: 11px; }
 .platform-scope-controls select { max-width: 240px; min-width: 150px; }
 .platform-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
-.platform-heading .eyebrow { font-size: 10px; margin: 0 0 5px; }
+.platform-heading .eyebrow { font-size: 11px; margin: 0 0 5px; }
 .platform-heading h1 { font: 700 clamp(24px,2.2vw,33px)/1.25 var(--font-display); letter-spacing: -.9px; margin: 0 0 9px; }
 .platform-heading p.muted { font-size: 12px; margin: 0; max-width: 760px; }
 .platform-heading > .button { flex-shrink: 0; }
@@ -2749,14 +2791,14 @@ tbody tr:hover {
 .platform-kpi > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--muted); }
 .platform-kpi svg { color: var(--green); flex-shrink: 0; }
 .platform-kpi > strong { display: block; font-family: var(--font-display); font-size: clamp(23px,2vw,31px); letter-spacing: -.8px; margin: 13px 0 7px; overflow-wrap: anywhere; }
-.platform-kpi > small { display: block; color: var(--muted); font-size: 9px; line-height: 1.7; }
+.platform-kpi > small { display: block; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .platform-dashboard-grid { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 22px; }
 .platform-bars { display: flex; align-items: flex-end; justify-content: space-around; gap: 12px; padding-top: 20px; }
 .platform-bars > div { flex: 1; text-align: center; min-width: 0; }
 .platform-bars > div > div { height: 145px; background: var(--surface-2); border-radius: 8px; display: flex; align-items: flex-end; overflow: hidden; margin: 12px 0; }
 .platform-bars > div > div > span { display: block; width: 100%; background: var(--primary); border-radius: 6px 6px 0 0; }
-.platform-bars strong { font-size: 9px; color: var(--muted); white-space: nowrap; }
-.platform-bars small { font-size: 9px; color: var(--muted); }
+.platform-bars strong { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.platform-bars small { font-size: 11px; color: var(--muted); }
 .platform-health > div { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .platform-health strong { color: var(--green); }
 .platform-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 19px; }
@@ -2766,11 +2808,11 @@ tbody tr:hover {
 .platform-table { font-size: 12px; }
 .platform-table td { vertical-align: middle; }
 .platform-table td > small,.platform-table td > strong { display: block; }
-.platform-table small { color: var(--muted); font-size: 10px; line-height: 1.7; margin-top: 4px; }
-.platform-table th { white-space: nowrap; font-size: 10px; }
+.platform-table small { color: var(--muted); font-size: 11px; line-height: 1.7; margin-top: 4px; }
+.platform-table th { white-space: nowrap; font-size: 11px; }
 .platform-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 13px; }
 .platform-row-actions > button,.platform-row-actions > a { padding: 2px 0; background: transparent; color: var(--green); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.platform-pill { display: inline-block; font-size: 9px; font-weight: 650; padding: 4px 8px; border-radius: 20px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.platform-pill { display: inline-block; font-size: 11px; font-weight: 650; padding: 4px 8px; border-radius: 20px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .platform-pill.positive { background: var(--soft); color: var(--green); }
 .platform-pill.attention { background: var(--warn-bg); color: var(--warn); }
 .platform-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 45px 20px; color: var(--muted); }
@@ -2788,17 +2830,17 @@ tbody tr:hover {
 .platform-role-grid .panel { min-width: 0; }
 .platform-role-grid .panel h3 { font-size: 17px; margin: 17px 0 9px; }
 .platform-role-grid details summary { font-size: 11px; color: var(--green); cursor: pointer; }
-.platform-permission-preview { max-height: 220px; overflow: auto; padding-inline-start: 16px; color: var(--muted); font-size: 10px; }
+.platform-permission-preview { max-height: 220px; overflow: auto; padding-inline-start: 16px; color: var(--muted); font-size: 11px; }
 .platform-plan-price { display: block; font: 700 25px var(--font-display); margin: 18px 0; }
 .platform-plan-price small { font: 400 11px var(--font-body); color: var(--muted); }
 .platform-plan-limits { padding: 0; list-style: none; }
 .platform-plan-limits li { display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 10px 0; font-size: 11px; }
 .platform-wrap { flex-wrap: wrap; }
-.platform-footer { display: flex; justify-content: space-between; gap: 20px; padding: 17px 34px; color: var(--muted); font-size: 10px; }
+.platform-footer { display: flex; justify-content: space-between; gap: 20px; padding: 17px 34px; color: var(--muted); font-size: 11px; }
 .platform-json { white-space: pre-wrap; word-break: break-word; padding: 17px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; max-height: 320px; overflow: auto; font-size: 11px; }
 .platform-detail-summary { display: flex; align-items: center; gap: 16px; font-size: 12px; }
 .platform-event-list article { padding: 15px 0; border-bottom: 1px solid var(--line); }
-.platform-event-list small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.platform-event-list small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .platform-event-list p { font-size: 12px; }
 .platform-dialog-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .platform-permission-editor { margin: 20px 0; }
@@ -2808,10 +2850,14 @@ tbody tr:hover {
 .platform-permission { display: flex; gap: 11px; align-items: flex-start; border-top: 1px solid var(--line); padding-top: 10px; }
 .platform-permission input { flex-shrink: 0; margin-top: 3px; }
 .platform-permission strong { display: block; font-size: 12px; }
-.platform-permission small { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
+.platform-permission small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
 @media(max-width:1200px){.platform-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.platform-role-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.platform-dashboard-grid{grid-template-columns:1fr}.platform-scope{flex-wrap:wrap}.platform-main{padding:24px}.platform-topbar{padding-inline:24px}}
 @media(max-width:850px){.platform-sidebar{display:none}.platform-body{margin:0;width:100%}.platform-menu{display:inline-flex}.platform-role-grid{grid-template-columns:1fr}.platform-topbar{padding:12px 17px}.platform-main{padding:22px 16px}.platform-scope-controls{width:100%;flex-wrap:wrap}.platform-scope-controls .input-icon{max-width:none;flex:1}.platform-topbar .platform-status-dot{display:none}.platform-mobile-nav nav{max-height:58vh;overflow:auto}.platform-heading{flex-wrap:wrap}.platform-footer{padding:18px;flex-direction:column;gap:5px}}
-@media(max-width:560px){.platform-filters{flex-wrap:wrap}.platform-filters>.input-icon{flex-basis:100%}.platform-filters>select{width:calc(50% - 6px);flex:1}.platform-filters>.button{flex:1}.platform-kpis{gap:10px}.platform-kpi{padding:16px 12px}.platform-kpi>strong{font-size:23px}.platform-kpi>div{font-size:10px}.platform-kpi>small{font-size:9px}.platform-scope{padding:16px}.platform-scope-controls select{min-width:0;flex:1}.platform-scope-controls .input-icon{min-width:100%;flex-basis:100%}.platform-heading h1{font-size:27px}.platform-main>.panel{padding:18px}.platform-pagination{flex-wrap:wrap}.platform-pagination>.row{width:100%;justify-content:space-between}.platform-bars{gap:7px}.platform-bars strong{font-size:8px}.platform-topbar>.row>span{font-size:10px}.platform-topbar .text-button{font-size:10px}}
+@media(max-width:560px){.platform-filters{flex-wrap:wrap}.platform-filters>.input-icon{flex-basis:100%}.platform-filters>select{width:calc(50% - 6px);flex:1}.platform-filters>.button{flex:1}.platform-kpis{gap:10px}.platform-kpi{padding:16px 12px}.platform-kpi>strong{font-size:23px}.platform-kpi>div{font-size: 11px}.platform-kpi>small{font-size: 11px}.platform-scope{padding:16px}.platform-scope-controls select{min-width:0;flex:1}.platform-scope-controls .input-icon{min-width:100%;flex-basis:100%}.platform-heading h1{font-size:27px}.platform-main>.panel{padding:18px}.platform-pagination{flex-wrap:wrap}.platform-pagination>.row{width:100%;justify-content:space-between}.platform-bars{gap:7px}.platform-bars strong{font-size: 11px}.platform-topbar>.row>span{font-size: 11px}.platform-topbar .text-button{font-size: 11px}}
+/* Long section names ("Subscriptions & due dates") plus "Account security" are wider than a 360px
+   phone; the nowrap flex rows then forced horizontal page scroll. Let the topbar wrap instead. */
+@media(max-width:560px){.platform-topbar{flex-wrap:wrap;row-gap:4px}.platform-topbar>.row{min-width:0;flex-wrap:wrap}}
+@media print{.platform-sidebar,.platform-topbar,.platform-scope,.platform-filters,.platform-footer,.platform-row-actions,.platform-pagination{display:none!important}.platform-body{margin:0;width:100%}.platform-main{padding:0}}
 .today-overview { margin: 28px 0; }
 .today-overview-heading { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 18px; }
 .today-overview-heading .eyebrow { font-size: 9px; margin: 0 0 5px; }
@@ -2907,6 +2953,8 @@ tbody tr:hover {
 .setup-choice strong { display: block; font-size: 11px; line-height: 1.6; }
 .setup-choice small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
 .span-two { grid-column: 1/-1; }
+/* Line breaks that only make sense on wide screens. */
+@media (max-width: 600px) { .desktop-only { display: none; } }
 .setup-details { margin-top: 24px; }
 .setup-hint { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 20px; line-height: 1.8; }
 .setup-hint svg { flex-shrink: 0; margin-top: 2px; }

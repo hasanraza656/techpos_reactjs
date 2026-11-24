@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import { php } from "./setup";
+import { laravelDir } from "./laravelDir";
 
 test("guided onboarding persists answers, resolves stale tabs, uploads private photos and connects real setup tasks", async ({
   page,
@@ -87,7 +88,8 @@ test("guided onboarding persists answers, resolves stale tabs, uploads private p
   await page.getByLabel(/^Phone/).fill("03001234567");
   await page.getByLabel(/^City/).fill("Lahore");
   const photo = path.resolve(
-    "../laravel/resources/demo-products/TEST-005.webp",
+    laravelDir,
+    "resources/demo-products/TEST-005.webp",
   );
   await page.getByLabel("Upload photo", { exact: true }).setInputFiles(photo);
   await expect(

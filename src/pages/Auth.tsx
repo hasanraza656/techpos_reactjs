@@ -1,12 +1,18 @@
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  Navigate,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react";
 import { api, json } from "../lib/api";
 import { ErrorBox } from "../components/ui";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Me } from "../lib/types";
 const schema = z.object({
   email: z.email("Enter a valid email address."),
   password: z.string().optional(),
@@ -29,6 +35,16 @@ export function AuthPage({
   const [challenge, setChallenge] = useState(false);
   const [code, setCode] = useState("");
   const [challenging, setChallenging] = useState(false);
+  // The API refuses a second login on an authenticated session ("Sign out
+  // before signing in…") and this page offers no sign-out, so send an
+  // already signed-in visitor on to the workspace instead.
+  const session = useQuery({
+    queryKey: ["auth-page-session"],
+    queryFn: () => api<Me>("auth/me"),
+    enabled: mode === "login" || mode === "register",
+    retry: false,
+    gcTime: 0,
+  });
   const form = useForm<Fields>({
     resolver: zodResolver(schema),
     defaultValues: { email: params.get("email") ?? "", remember: false },
@@ -97,6 +113,22 @@ export function AuthPage({
     } finally {
       setChallenging(false);
     }
+  }
+  if (session.data && !challenge) {
+    const next = params.get("next");
+    return (
+      <Navigate
+        replace
+        to={
+          next && /^\/invitations\/[a-zA-Z0-9]{64}$/.test(next)
+            ? next
+            : session.data.user.is_superadmin ||
+                session.data.user.platform_access
+              ? "/platform"
+              : "/"
+        }
+      />
+    );
   }
   if (challenge)
     return (

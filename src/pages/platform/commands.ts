@@ -9,6 +9,9 @@ export function reviewAction(row: Row): Action {
     description:
       "Check the actual transfer in your bank or wallet. Proof upload alone never activates a plan.",
     initial: { decision: "approved", note: "" },
+    proofUrl: row.has_proof
+      ? `/api/v1/platform/payments/${row.public_id}/proof`
+      : undefined,
     fields: [
       {
         key: "decision",

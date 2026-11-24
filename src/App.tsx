@@ -134,7 +134,14 @@ export const useWorkspace = () => {
   if (!c) throw new Error("Missing workspace");
   return c;
 };
-const nav = [
+// `permission` hides pages whose data endpoints require a business-wide
+// permission; branch-scoped operational pages stay visible and self-gate.
+const nav: {
+  to: string;
+  name: string;
+  icon: typeof LayoutDashboard;
+  permission?: string;
+}[] = [
   { to: "/", name: "Overview", icon: LayoutDashboard },
   { to: "/pos", name: "Cashier", icon: ScanBarcode },
   { to: "/catalog", name: "Product catalog", icon: Package },
@@ -144,14 +151,34 @@ const nav = [
   { to: "/reports", name: "Sales summary", icon: ChartColumn },
   { to: "/intelligence", name: "Built-in intelligence", icon: Lightbulb },
   { to: "/sync", name: "Sync & local receipts", icon: RefreshCw },
-  { to: "/onboarding", name: "Business setup", icon: Sparkles },
+  {
+    to: "/onboarding",
+    name: "Business setup",
+    icon: Sparkles,
+    permission: "onboarding.manage",
+  },
   { to: "/settings", name: "Settings", icon: SlidersHorizontal },
   { to: "/modules", name: "Modules", icon: SlidersHorizontal },
   { to: "/labels", name: "Language & labels", icon: Languages },
-  { to: "/roles", name: "Roles & permissions", icon: Users },
-  { to: "/team", name: "Team members", icon: Users },
+  {
+    to: "/roles",
+    name: "Roles & permissions",
+    icon: Users,
+    permission: "roles.manage",
+  },
+  {
+    to: "/team",
+    name: "Team members",
+    icon: Users,
+    permission: "employees.view",
+  },
   { to: "/account", name: "Account security", icon: Shield },
-  { to: "/subscription", name: "Subscription", icon: CreditCard },
+  {
+    to: "/subscription",
+    name: "Subscription",
+    icon: CreditCard,
+    permission: "subscriptions.view",
+  },
 ];
 function Shell() {
   const location = useLocation();
@@ -265,7 +292,9 @@ function Shell() {
   }
   if (me.error instanceof ApiError && me.error.status === 401)
     return <Navigate to="/login" replace />;
-  if (me.isPending || (!tenant && me.data?.tenants.length)) return <Loading />;
+  const activeTenants =
+    me.data?.tenants.filter((t) => t.status === "active") ?? [];
+  if (me.isPending || (!tenant && activeTenants.length)) return <Loading />;
   if (me.error)
     return (
       <main className="standalone">
@@ -276,10 +305,13 @@ function Shell() {
       </main>
     );
   if (!me.data) return null;
-  if (!me.data.tenants.length)
+  // Memberships of suspended/closed businesses never become the active tenant,
+  // so treat "none active" like "none" instead of spinning forever.
+  if (!activeTenants.length)
     return (
       <main className="standalone">
-        <h1>No business membership</h1>
+        <ErrorBox error={logoutError} />
+        <h1>No active business membership</h1>
         <p>Contact your business owner to restore access.</p>
         <button className="button" onClick={logout}>
           Sign out
@@ -294,6 +326,12 @@ function Shell() {
     business.data.permissions.includes("onboarding.manage")
   )
     return <Navigate to="/onboarding" replace />;
+  const visibleNav = nav.filter(
+    (n) =>
+      !n.permission ||
+      !business.data ||
+      business.data.permissions.includes(n.permission),
+  );
   const menu = (
     <>
       <Link to="/" className="brand">
@@ -309,7 +347,7 @@ function Shell() {
           value={tenant}
           onChange={(e) => switchTenant(e.target.value)}
         >
-          {me.data.tenants.map((t) => (
+          {activeTenants.map((t) => (
             <option key={t.public_id} value={t.public_id}>
               {t.name}
             </option>
@@ -318,7 +356,7 @@ function Shell() {
       </div>
       <p className="nav-caption">WORKSPACE</p>
       <nav aria-label="Main navigation">
-        {nav.map((n) => (
+        {visibleNav.map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
@@ -381,7 +419,7 @@ function Shell() {
             />
             {search && (
               <div className="search-results">
-                {nav
+                {visibleNav
                   .filter((n) =>
                     n.name.toLowerCase().includes(search.toLowerCase()),
                   )
@@ -391,7 +429,7 @@ function Shell() {
                       <ChevronRight size={14} />
                     </Link>
                   ))}
-                {!nav.some((n) =>
+                {!visibleNav.some((n) =>
                   n.name.toLowerCase().includes(search.toLowerCase()),
                 ) && <p>No matching pages.</p>}
               </div>
@@ -466,6 +504,7 @@ function Shell() {
 }
 function Overview() {
   const { me, business } = useWorkspace();
+  const canSetup = business.permissions.includes("onboarding.manage");
   return (
     <>
       <PageTitle
@@ -473,10 +512,12 @@ function Overview() {
         title={`Hello, ${me.user.name.split(" ")[0]}.`}
         description="Here’s where your business stands. Let’s take the next step together."
         action={
-          <Link to="/onboarding" className="button">
-            <Sparkles size={17} />
-            Personalize workspace
-          </Link>
+          canSetup && (
+            <Link to="/onboarding" className="button">
+              <Sparkles size={17} />
+              Personalize workspace
+            </Link>
+          )
         }
       />
       <div className="welcome-panel">
@@ -491,10 +532,12 @@ function Overview() {
             Start with the essentials. Shape your workspace
             <br className="desktop-only" /> around the way you work.
           </p>
-          <Link to="/onboarding" className="button white">
-            Continue business setup
-            <ArrowUpRight size={17} />
-          </Link>
+          {canSetup && (
+            <Link to="/onboarding" className="button white">
+              Continue business setup
+              <ArrowUpRight size={17} />
+            </Link>
+          )}
         </div>
         <div className="workspace-art" aria-hidden="true">
           <div className="art-icon">
@@ -551,6 +594,7 @@ function Overview() {
             icon: Users,
             title: "Set clear permissions",
             body: "Give your team the right access for their role.",
+            permission: "roles.manage",
           },
           {
             to: "/labels",
@@ -558,38 +602,155 @@ function Overview() {
             title: "Make it sound like you",
             body: "Customize the words your business uses.",
           },
-        ].map((c) => (
-          <Link to={c.to} key={c.to} className="action-card">
-            <c.icon size={24} />
-            <h3>{c.title}</h3>
-            <p>{c.body}</p>
-            <span>
-              Get started
-              <ArrowUpRight size={17} />
-            </span>
-          </Link>
-        ))}
+        ]
+          .filter(
+            (c) => !c.permission || business.permissions.includes(c.permission),
+          )
+          .map((c) => (
+            <Link to={c.to} key={c.to} className="action-card">
+              <c.icon size={24} />
+              <h3>{c.title}</h3>
+              <p>{c.body}</p>
+              <span>
+                Get started
+                <ArrowUpRight size={17} />
+              </span>
+            </Link>
+          ))}
       </div>
-      <section className="panel mt">
-        <div className="section-heading">
-          <div>
-            <h2>Business locations</h2>
-            <p className="muted">Your connected branches.</p>
-          </div>
-          <span className="badge">{business.tenant.currency}</span>
-        </div>
-        {business.branches.map((b) => (
-          <div className="list-row" key={b.public_id}>
-            <Store size={21} />
-            <div>
-              <strong>{b.name}</strong>
-              <small>{b.address ?? "Address can be added during setup."}</small>
-            </div>
-            <span className="status-pill">Active</span>
-          </div>
-        ))}
-      </section>
+      <BusinessLocations />
     </>
+  );
+}
+function BusinessLocations() {
+  const { me, business } = useWorkspace();
+  const client = useQueryClient();
+  const notify = useClient((s) => s.notify);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const canManage = business.permissions.includes("branches.manage");
+  const limit = Number(business.plan.limits.branches ?? 0);
+  const atLimit = business.branches.length >= limit;
+  const verified = !!me.user.email_verified_at;
+  function close(next: boolean) {
+    if (busy) return;
+    setOpen(next);
+    if (!next) {
+      setName("");
+      setAddress("");
+      setError(undefined);
+    }
+  }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api(
+        "branches",
+        json("POST", { name: name.trim(), address: address.trim() || null }),
+      );
+      await client.invalidateQueries({ queryKey: ["business"] });
+      notify(`${name.trim()} was added. Its stockroom and register are ready.`);
+      setBusy(false);
+      close(false);
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="panel mt">
+      <div className="section-heading">
+        <div>
+          <h2>Business locations</h2>
+          <p className="muted">
+            {business.branches.length} of {limit} branches on your plan.
+          </p>
+        </div>
+        {canManage && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => setOpen(true)}
+            disabled={atLimit || !verified}
+            title={
+              !verified
+                ? "Verify your email before adding a branch."
+                : atLimit
+                  ? "Your plan's branch limit is reached. Upgrade to add more."
+                  : undefined
+            }
+          >
+            <Store size={16} />
+            Add branch
+          </button>
+        )}
+      </div>
+      {canManage && (atLimit || !verified) && (
+        <p className="muted">
+          {!verified ? (
+            "Verify your email address to add another branch."
+          ) : (
+            <>
+              Your plan's branch limit is reached.{" "}
+              <Link to="/subscription">Upgrade to add more.</Link>
+            </>
+          )}
+        </p>
+      )}
+      {business.branches.map((b) => (
+        <div className="list-row" key={b.public_id}>
+          <Store size={21} />
+          <div>
+            <strong>{b.name}</strong>
+            <small>{b.address ?? "No address recorded."}</small>
+          </div>
+          <span className="status-pill">Active</span>
+        </div>
+      ))}
+      <Modal
+        open={open}
+        onOpenChange={close}
+        title="Add a branch"
+        description="A new branch gets its own default stockroom and register. Stock and sales are tracked separately per branch."
+      >
+        <form onSubmit={submit}>
+          <ErrorBox error={error} />
+          <div className="form-grid">
+            <label className="span-two">
+              Branch name
+              <input
+                required
+                autoFocus
+                maxLength={150}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+            <label className="span-two">
+              Address (optional)
+              <input
+                maxLength={255}
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+            </label>
+          </div>
+          <button
+            type="submit"
+            className="button mt"
+            disabled={busy || !name.trim()}
+          >
+            {busy ? "Adding…" : "Add branch"}
+          </button>
+        </form>
+      </Modal>
+    </section>
   );
 }
 export default function App() {
@@ -615,12 +776,7 @@ export default function App() {
                 element={<AuthPage mode={mode} />}
               />
             ))}
-            <Route
-              path="platform/*"
-              element={
-                <PlatformPage />
-              }
-            />
+            <Route path="platform/*" element={<PlatformPage />} />
             <Route element={<Shell />}>
               <Route index element={<Overview />} />
               <Route path="pos" element={<CashierPage />} />

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { ShieldCheck, Download } from "lucide-react";
 import { api, json, useClient } from "../lib/api";
+import { saveBlob } from "../lib/downloads";
 import { ErrorBox, Modal, Loading } from "./ui";
 export function TwoFactorSettings({ verified }: { verified: boolean }) {
   const client = useQueryClient();
@@ -70,12 +71,7 @@ export function TwoFactorSettings({ verified }: { verified: boolean }) {
       ],
       { type: "text/plain" },
     );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "techpos-recovery-codes.txt";
-    a.click();
-    URL.revokeObjectURL(url);
+    saveBlob(blob, "techpos-recovery-codes.txt");
   }
   if (state.isPending) return <Loading />;
   return (
@@ -131,6 +127,8 @@ export function TwoFactorSettings({ verified }: { verified: boolean }) {
       <Modal
         open={open}
         onOpenChange={(v) => {
+          // Codes are shown once; only the explicit confirmation below may dismiss them.
+          if (!v && recovery.length) return;
           setOpen(v);
           if (!v) {
             setSetup(null);
@@ -170,11 +168,18 @@ export function TwoFactorSettings({ verified }: { verified: boolean }) {
               className="button secondary full mt"
               onClick={() => {
                 setRecovery([]);
+                setSetup(null);
+                setPassword("");
+                setCode("");
                 setOpen(false);
               }}
             >
               I’ve saved my recovery codes
             </button>
+            <p className="muted mt">
+              This window stays open until you confirm, because these codes
+              cannot be shown again.
+            </p>
           </>
         ) : mode === "setup" && !setup ? (
           <form

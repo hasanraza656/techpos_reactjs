@@ -288,6 +288,7 @@ export function ResourcePage({ section }: { section: string }) {
             setPlan("");
             setBranch("");
             setWarehouse("");
+            setPage(1);
           }}
         >
           Clear filters
@@ -410,7 +411,12 @@ export function DataTable({ section, rows }: { section: string; rows: Row[] }) {
                           <>
                             <button
                               onClick={() =>
-                                setDetail({ type: "client", row: r })
+                                // The list row lacks contact/notes; load the
+                                // full profile so the form is not blanked.
+                                void api<Row>(`platform/clients/${r.public_id}`).then(
+                                  (full) => p.open(clientAction(p.lookup, full)),
+                                  () => setDetail({ type: "client", row: r }),
+                                )
                               }
                             >
                               Edit
@@ -509,7 +515,7 @@ export function DataTable({ section, rows }: { section: string; rows: Row[] }) {
                       <small>{value(r, "method")}</small>
                     </td>
                     <td>
-                      {money(r.amount)}
+                      {money(r.amount, value(r, "currency", "PKR"))}
                       <small>{value(r, "transaction_reference")}</small>
                     </td>
                     <td>
@@ -594,7 +600,7 @@ export function DataTable({ section, rows }: { section: string; rows: Row[] }) {
                       <small>{date(r.issued_on)}</small>
                     </td>
                     <td>
-                      {money(r.amount)}
+                      {money(r.amount, value(r, "currency", "PKR"))}
                       <small>{value(r, "transaction_reference")}</small>
                     </td>
                     <td>
@@ -835,6 +841,15 @@ export function DataTable({ section, rows }: { section: string; rows: Row[] }) {
     </>
   );
 }
+function auditMetadata(metadata: unknown) {
+  // Malformed legacy metadata must not throw during render (no error boundary).
+  if (typeof metadata !== "string") return JSON.stringify(metadata, null, 2);
+  try {
+    return JSON.stringify(JSON.parse(metadata), null, 2);
+  } catch {
+    return metadata;
+  }
+}
 export function Detail({
   type,
   row,
@@ -909,13 +924,7 @@ export function Detail({
         </>
       ) : type === "audit" ? (
         <pre className="platform-json">
-          {JSON.stringify(
-            typeof row.metadata === "string"
-              ? JSON.parse(row.metadata)
-              : row.metadata,
-            null,
-            2,
-          )}
+          {auditMetadata(row.metadata)}
         </pre>
       ) : q.isPending ? (
         <Loading />
@@ -958,27 +967,33 @@ export function Detail({
                 Edit client profile
               </button>
             )}
-            <Link
-              className="button secondary"
-              to={`/platform/inventory?client=${data.public_id}`}
-              onClick={close}
-            >
-              Client inventory
-            </Link>
-            <Link
-              className="button secondary"
-              to={`/platform/client-access?client=${data.public_id}`}
-              onClick={close}
-            >
-              Team permissions
-            </Link>
-            <Link
-              className="button secondary"
-              to={`/platform/subscriptions?client=${data.public_id}`}
-              onClick={close}
-            >
-              Subscription
-            </Link>
+            {p.identity.permissions.includes("inventory.view") && (
+              <Link
+                className="button secondary"
+                to={`/platform/inventory?client=${data.public_id}`}
+                onClick={close}
+              >
+                Client inventory
+              </Link>
+            )}
+            {p.identity.permissions.includes("client_access.view") && (
+              <Link
+                className="button secondary"
+                to={`/platform/client-access?client=${data.public_id}`}
+                onClick={close}
+              >
+                Team permissions
+              </Link>
+            )}
+            {p.identity.permissions.includes("subscriptions.view") && (
+              <Link
+                className="button secondary"
+                to={`/platform/subscriptions?client=${data.public_id}`}
+                onClick={close}
+              >
+                Subscription
+              </Link>
+            )}
           </div>
         </>
       ) : type === "user" && data ? (

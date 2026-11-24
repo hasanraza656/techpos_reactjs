@@ -1,5 +1,11 @@
 import { forwardRef } from "react";
 import type { SaleDocument } from "../lib/operations";
+// Server rows are UTC "YYYY-MM-DD HH:MM:SS"; Safari rejects the space form.
+function receiptTime(value: string) {
+  const iso = value.includes("T") ? value : value.replace(" ", "T");
+  const date = new Date(/(Z|[+-]\d\d:?\d\d)$/.test(iso) ? iso : iso + "Z");
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
 export const Receipt = forwardRef<
   HTMLDivElement,
   { sale: SaleDocument; pending?: boolean }
@@ -12,11 +18,7 @@ export const Receipt = forwardRef<
       <small>
         {sale.receipt_number}
         <br />
-        {new Date(
-          sale.finalized_at.endsWith("Z")
-            ? sale.finalized_at
-            : sale.finalized_at + "Z",
-        ).toLocaleString()}
+        {receiptTime(sale.finalized_at)}
       </small>
     </p>
     {pending && (

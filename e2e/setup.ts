@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { laravelDir } from "./laravelDir";
 export const backendOrigin = `http://127.0.0.1:${process.env.TECHPOS_E2E_BACKEND_PORT ?? 8000}`;
 export const env = {
   ...process.env,
@@ -13,10 +14,16 @@ export const env = {
   QUEUE_CONNECTION: "database",
   MAIL_MAILER: "log",
   CACHE_FILE_PATH: path.resolve("../.tools/e2e-cache"),
+  // Fictional payment instructions so the seeded methods are active in the isolated QA database.
+  PAYMENT_BANK_NAME: "Test Bank",
+  PAYMENT_BANK_ACCOUNT: "TEST-0000000001",
+  PAYMENT_BANK_HOLDER: "Test Holder",
+  PAYMENT_JAZZCASH_ACCOUNT: "TEST-0000000002",
+  PAYMENT_EASYPAISA_ACCOUNT: "TEST-0000000003",
 };
 export function php(args: string[]) {
   const r = spawnSync("php", args, {
-    cwd: path.resolve("../laravel"),
+    cwd: laravelDir,
     env,
     encoding: "utf8",
     windowsHide: true,

@@ -11,7 +11,8 @@ export const defaultShortcuts = {
   guide: "F10",
   checkout: "Ctrl+Enter",
   print: "Ctrl+P",
-  newSale: "Ctrl+N",
+  // Ctrl+N opens a browser window in Chrome/Edge before the page can intercept it.
+  newSale: "Ctrl+B",
   quickSearch: "Ctrl+K",
 };
 export type ShortcutAction = keyof typeof defaultShortcuts;
@@ -31,6 +32,15 @@ export const shortcutLabels: Record<ShortcutAction, string> = {
   newSale: "New sale (confirmation)",
   quickSearch: "Focus product search",
 };
+// Keys the browser handles itself; pages cannot reliably intercept them.
+const reservedShortcuts = [
+  "Ctrl+W",
+  "Ctrl+T",
+  "Ctrl+R",
+  "Ctrl+L",
+  "Ctrl+Q",
+  "Ctrl+N",
+];
 export function validShortcuts(map: ShortcutMap): string | null {
   const values = Object.values(map);
   if (new Set(values).size !== values.length)
@@ -38,10 +48,23 @@ export function validShortcuts(map: ShortcutMap): string | null {
   for (const key of values)
     if (
       !/^(F[1-9]|F1[0-2]|Ctrl\+(Enter|[A-Z]))$/.test(key) ||
-      ["Ctrl+W", "Ctrl+T", "Ctrl+R", "Ctrl+L", "Ctrl+Q"].includes(key)
+      reservedShortcuts.includes(key)
     )
-      return "Use F1–F12 or Ctrl+letter/Enter. Browser close, refresh, tab and address-bar keys are reserved.";
+      return "Use F1–F12 or Ctrl+letter/Enter. Browser close, refresh, new window, tab and address-bar keys are reserved.";
   return null;
+}
+/**
+ * Upgrade a saved mapping: fill actions added since it was saved and move any key that is now
+ * reserved (e.g. the old Ctrl+N default) back to its current default when that key is free.
+ */
+export function migrateShortcuts(saved: Partial<ShortcutMap>): ShortcutMap {
+  const map = { ...defaultShortcuts, ...saved } as ShortcutMap;
+  for (const action of Object.keys(map) as ShortcutAction[]) {
+    if (!reservedShortcuts.includes(map[action])) continue;
+    const fallback = defaultShortcuts[action];
+    if (!Object.values(map).includes(fallback)) map[action] = fallback;
+  }
+  return map;
 }
 export function useShortcuts(
   map: ShortcutMap,

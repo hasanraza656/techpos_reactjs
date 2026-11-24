@@ -38,8 +38,12 @@ export function ActionDialog({
       Object.entries(values).forEach(([key, v]) => {
         if (key.includes(".")) {
           const [prefix, field] = key.split(".");
-          if (!body[prefix]) body[prefix] = {};
-          (body[prefix] as Row)[field] = v;
+          // Copy before writing: initial values may reference cached query
+          // objects (for example plan.limits), which must not be mutated.
+          body[prefix] = {
+            ...((body[prefix] as Row | undefined) ?? {}),
+            [field]: v,
+          };
         } else body[key] = v;
       });
       await api(
@@ -77,15 +81,21 @@ export function ActionDialog({
     >
       <form onSubmit={submit}>
         <ErrorBox error={error} />
-        {action.endpoint.includes("/review") && (
+        {action.proofUrl ? (
           <a
             className="button secondary"
-            href={`/api/v1/platform/payments/${action.endpoint.split("/")[1]}/proof`}
+            href={action.proofUrl}
             target="_blank"
             rel="noreferrer"
           >
             Download private proof
           </a>
+        ) : (
+          action.endpoint.includes("/review") && (
+            <p className="muted">
+              No proof is stored for this payment, so it cannot be approved.
+            </p>
+          )
         )}
         <div className="form-grid">
           {action.fields

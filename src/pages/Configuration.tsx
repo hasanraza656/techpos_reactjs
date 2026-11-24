@@ -12,6 +12,7 @@ import {
   Upload,
 } from "lucide-react";
 import { api, json, useClient } from "../lib/api";
+import { saveBlob } from "../lib/downloads";
 import type { Module } from "../lib/types";
 import { useWorkspace } from "../App";
 import { ErrorBox, Loading, PageTitle, Modal } from "../components/ui";
@@ -191,6 +192,8 @@ export function LabelsPage() {
   const [resetSection, setResetSection] = useState("");
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
+  // Save, import and restore are all rejected server-side without labels.manage.
+  const canManage = business.permissions.includes("labels.manage");
   const labels = useQuery({
     queryKey: ["labels", business.tenant.public_id, locale],
     queryFn: () => api<Labels>(`labels?locale=${locale}`),
@@ -247,12 +250,7 @@ export function LabelsPage() {
       ],
       { type: "application/json" },
     );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `techpos-labels-${locale}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveBlob(blob, `techpos-labels-${locale}.json`);
   }
   async function importLabels(file?: File) {
     if (!file) return;
@@ -278,7 +276,7 @@ export function LabelsPage() {
         action={
           <button
             className="button"
-            disabled={busy || !Object.keys(edits).length}
+            disabled={busy || !canManage || !Object.keys(edits).length}
             onClick={() => save()}
           >
             Save changes
@@ -329,9 +327,7 @@ export function LabelsPage() {
         </select>
         <button
           className="button secondary"
-          disabled={
-            !section || busy || !business.permissions.includes("labels.manage")
-          }
+          disabled={!section || busy || !canManage}
           onClick={() => setResetSection(section)}
         >
           Restore section
@@ -340,15 +336,21 @@ export function LabelsPage() {
           <Download size={16} />
           Export
         </button>
-        <label className="button secondary file-button">
-          <Upload size={16} />
-          Import
-          <input
-            type="file"
-            accept="application/json"
-            onChange={(e) => importLabels(e.target.files?.[0])}
-          />
-        </label>
+        {canManage && (
+          <label className="button secondary file-button">
+            <Upload size={16} />
+            Import
+            <input
+              type="file"
+              accept="application/json"
+              onChange={(e) => {
+                void importLabels(e.target.files?.[0]);
+                // Allow re-importing the same file after fixing an error.
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
       </div>
       <p className="muted">
         Initial dictionaries use reviewed English fallbacks. You can supply your

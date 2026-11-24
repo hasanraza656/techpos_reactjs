@@ -287,6 +287,16 @@ export function OnboardingPage() {
       setNavigating(false);
     }
   }
+  if (!business.permissions.includes("onboarding.manage"))
+    return (
+      <ErrorBox
+        error={
+          new Error(
+            "Your role cannot change business setup. Ask your business owner.",
+          )
+        }
+      />
+    );
   if (
     progress.isPending ||
     industries.isPending ||

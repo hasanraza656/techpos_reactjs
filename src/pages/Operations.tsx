@@ -20,6 +20,11 @@ export function CustomersPage() {
   const o = useOperations();
   const client = useQueryClient();
   const [search, setSearch] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   const list = useQuery({
@@ -27,12 +32,13 @@ export function CustomersPage() {
       "customers",
       o.business.tenant.public_id,
       o.branch,
-      search,
+      searchTerm,
       page,
     ],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       ops<Page<Customer>>(
-        "customers?" + query({ branch: o.branch, q: search, page }),
+        "customers?" + query({ branch: o.branch, q: searchTerm, page }),
+        { signal },
       ),
     enabled: o.ready,
   });

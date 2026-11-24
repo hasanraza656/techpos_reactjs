@@ -330,7 +330,9 @@ function ReturnForm({
         e.preventDefault();
         setLocalError(undefined);
         try {
-          for (const v of values) scaled(v.quantity, 3);
+          const quantities = values.map((v) => scaled(v.quantity, 3));
+          if (!quantities.some((q) => q > 0n))
+            throw new Error("Enter a return quantity for at least one line.");
           save.mutate();
         } catch (err) {
           setLocalError(err);

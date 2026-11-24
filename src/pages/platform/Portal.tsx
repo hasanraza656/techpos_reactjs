@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link,
@@ -51,6 +51,17 @@ const items = [
   ["leads", "Business leads", "leads.view", Building2],
   ["audit", "Audit trail", "audit.view", Shield],
 ] as const;
+// Sections filtered by client; mirrors ReadController::CLIENT_SCOPED on the server.
+const clientScoped = [
+  "clients.view",
+  "client_access.view",
+  "inventory.view",
+  "client_sales.view",
+  "subscriptions.view",
+  "payments.view",
+  "billing.view",
+  "audit.view",
+];
 
 export function PlatformPage() {
   const identity = useQuery({
@@ -65,12 +76,18 @@ export function PlatformPage() {
   const location = useLocation();
   const section = location.pathname.split("/")[2] ?? "";
   const [clientSearch, setClientSearch] = useState("");
+  // Debounced copy used for the lookup request, so typing does not send one request per key.
+  const [clientQuery, setClientQuery] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setClientQuery(clientSearch), 250);
+    return () => window.clearTimeout(timer);
+  }, [clientSearch]);
   const [mobile, setMobile] = useState(false);
   const [action, setAction] = useState<Action | null>(null);
   const [logoutError, setLogoutError] = useState<unknown>();
   const cache = useQueryClient();
   const lookup = useQuery({
-    queryKey: ["platform-lookup", clientSearch, client],
+    queryKey: ["platform-lookup", clientQuery, client],
     queryFn: () =>
       api<{
         clients: Row[];
@@ -79,7 +96,7 @@ export function PlatformPage() {
         selected_client?: Row;
         branches?: Row[];
         warehouses?: Row[];
-      }>(`platform/lookup?${new URLSearchParams({ q: clientSearch, client })}`),
+      }>(`platform/lookup?${new URLSearchParams({ q: clientQuery, client })}`),
     enabled: !!identity.data,
     placeholderData: (previous) => previous,
   });
@@ -228,7 +245,7 @@ export function PlatformPage() {
           </header>
           <main className="platform-main">
             <ErrorBox error={logoutError} />
-            {has("clients.view") && (
+            {clientScoped.some(has) && (
               <div className="platform-scope">
                 <div>
                   <span className="eyebrow">CLIENT SCOPE</span>
@@ -299,7 +316,9 @@ export function PlatformPage() {
             ) : section === "settings" ? (
               <SettingsPage />
             ) : (
-              <ResourcePage section={section} />
+              // Remount per section so filters from the previous section are
+              // never sent (and briefly rendered) with the new section's query.
+              <ResourcePage key={section} section={section} />
             )}
           </main>
           <footer className="platform-footer">

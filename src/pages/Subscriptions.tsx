@@ -246,7 +246,13 @@ function PaymentDetails({
     (m) => m.id === p.payment_method_id,
   );
   const upload = useMutation({
-    mutationFn: (file: File) => {
+    mutationFn: async (file: File) => {
+      // Mirror the server rule (png/jpg/webp, 5 MB) before spending the upload.
+      if (
+        !/^image\/(png|jpeg|webp)$/.test(file.type) ||
+        file.size > 5 * 1024 * 1024
+      )
+        throw new Error("Choose a PNG, JPEG or WebP screenshot up to 5 MB.");
       const form = new FormData();
       form.append("proof", file);
       return api(`payments/${p.public_id}/proof`, {
@@ -353,6 +359,8 @@ function PaymentDetails({
               disabled={upload.isPending}
               onChange={(e) => {
                 if (e.target.files?.[0]) upload.mutate(e.target.files[0]);
+                // Allow choosing the same file again after a failed upload.
+                e.target.value = "";
               }}
             />
           </label>

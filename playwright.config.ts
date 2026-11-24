@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 import path from "node:path";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { laravelDir } from "./e2e/laravelDir";
 export const backendPort = Number(process.env.TECHPOS_E2E_BACKEND_PORT ?? 8000);
 export const frontendPort = Number(
   process.env.TECHPOS_E2E_FRONTEND_PORT ?? 5173,
@@ -39,7 +40,7 @@ export default defineConfig({
   webServer: [
     {
       command: `php artisan serve --host=127.0.0.1 --port=${backendPort}`,
-      cwd: "../laravel",
+      cwd: laravelDir,
       url: `${backendOrigin}/health`,
       env: e2eEnv,
       reuseExistingServer: false,

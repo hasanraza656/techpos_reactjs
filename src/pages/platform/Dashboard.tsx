@@ -47,10 +47,12 @@ export function Dashboard() {
         title="A clear view of the platform."
         description="Clients, cash collections, renewals and the work that needs attention."
         action={
-          <Link className="button secondary" to="/platform/clients">
-            Browse clients
-            <ArrowUpRight size={16} />
-          </Link>
+          p.identity.permissions.includes("clients.view") ? (
+            <Link className="button secondary" to="/platform/clients">
+              Browse clients
+              <ArrowUpRight size={16} />
+            </Link>
+          ) : undefined
         }
       />
       <ErrorBox error={q.error} />
@@ -165,10 +167,12 @@ export function Dashboard() {
           <p className="muted">
             Unpaid invoices and pending proofs never count as collected revenue.
           </p>
-          <Link to="/platform/subscriptions" className="text-button">
-            Review subscriptions
-            <ArrowUpRight size={15} />
-          </Link>
+          {p.identity.permissions.includes("subscriptions.view") && (
+            <Link to="/platform/subscriptions" className="text-button">
+              Review subscriptions
+              <ArrowUpRight size={15} />
+            </Link>
+          )}
         </section>
       </div>
       {p.identity.permissions.includes("payments.view") && (

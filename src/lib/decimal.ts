@@ -62,14 +62,28 @@ export function cartTotals(
   if (cart < 0n || cart > base)
     throw new Error("Cart discount exceeds the sale amount.");
   let remainder = cart;
-  const rows = lines.map((l, i) => {
+  const allocations = bases.map((b, i) => {
     const allocation =
-      i === lines.length - 1
-        ? remainder
-        : base > 0n
-          ? (cart * bases[i]) / base
-          : 0n;
+      i === bases.length - 1 ? remainder : base > 0n ? (cart * b) / base : 0n;
     remainder -= allocation;
+    return allocation;
+  });
+  // Mirrors SaleCalculator.php: truncated shares can leave the last line a remainder
+  // larger than its own base (e.g. a free last item). Move the excess to earlier lines
+  // with room so no line goes negative and client totals equal the server's.
+  const last = bases.length - 1;
+  let excess = last >= 0 ? allocations[last] - bases[last] : 0n;
+  if (excess > 0n) {
+    allocations[last] = bases[last];
+    for (let i = 0; i < allocations.length && excess > 0n; i++) {
+      const room = bases[i] - allocations[i];
+      const take = room < excess ? room : excess;
+      allocations[i] += take;
+      excess -= take;
+    }
+  }
+  const rows = lines.map((l, i) => {
+    const allocation = allocations[i];
     const amount = bases[i] - allocation;
     const rate = scaled(l.product.tax_rate, 4);
     const tax = l.product.tax_inclusive

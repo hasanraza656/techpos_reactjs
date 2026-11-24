@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
@@ -24,17 +24,17 @@ export function SettingsPage() {
       registration_number: "",
     },
   });
-  const [loaded, setLoaded] = useState(false);
   const tax = useQuery({
     queryKey: ["tax-profile", business.tenant.public_id],
-    queryFn: async () => {
-      const r = await api<{ tax_profile: Profile }>("settings/tax");
-      form.reset(r.tax_profile);
-      setLoaded(true);
-      return r;
-    },
+    queryFn: () => api<{ tax_profile: Profile }>("settings/tax"),
     enabled: business.permissions.includes("settings.tax"),
   });
+  // The profile can be served from cache (the product editor shares this key),
+  // in which case queryFn never runs; hydrate the form from the data instead.
+  const profile = tax.data?.tax_profile;
+  useEffect(() => {
+    if (profile) form.reset(profile);
+  }, [profile, form]);
   const save = useMutation({
     mutationFn: (v: Profile) => api("settings/tax", json("PUT", v)),
     onSuccess: () => {
@@ -69,10 +69,12 @@ export function SettingsPage() {
             Update your industry, business details, logo and preferences in
             Business setup.
           </p>
-          <Link to="/onboarding" className="button secondary">
-            Edit business profile
-            <ArrowUpRight size={16} />
-          </Link>
+          {business.permissions.includes("onboarding.manage") && (
+            <Link to="/onboarding" className="button secondary">
+              Edit business profile
+              <ArrowUpRight size={16} />
+            </Link>
+          )}
         </section>
         <section className="panel">
           <div className="settings-heading">
@@ -92,7 +94,7 @@ export function SettingsPage() {
             <p>
               Your role does not allow tax changes. Ask your business owner.
             </p>
-          ) : !loaded && tax.isPending ? (
+          ) : !profile && tax.isPending ? (
             <Loading />
           ) : (
             <form onSubmit={form.handleSubmit((v) => save.mutate(v))}>
