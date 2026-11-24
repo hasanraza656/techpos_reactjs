@@ -6,6 +6,11 @@ function receiptTime(value: string) {
   const date = new Date(/(Z|[+-]\d\d:?\d\d)$/.test(iso) ? iso : iso + "Z");
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
+// Printed receipts can be handed on; show only the last 4 phone digits.
+function shortPhone(phone?: string | null) {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  return digits.length >= 4 ? `···${digits.slice(-4)}` : "";
+}
 export const Receipt = forwardRef<
   HTMLDivElement,
   { sale: SaleDocument; pending?: boolean }
@@ -21,6 +26,17 @@ export const Receipt = forwardRef<
         {receiptTime(sale.finalized_at)}
       </small>
     </p>
+    {sale.customer?.name && (
+      <p className="receipt-customer">
+        Customer: {sale.customer.name}
+        {shortPhone(sale.customer.phone) && (
+          <>
+            <br />
+            <small>Phone: {shortPhone(sale.customer.phone)}</small>
+          </>
+        )}
+      </p>
+    )}
     {pending && (
       <p className="receipt-pending">
         LOCAL RECEIPT · PENDING SERVER SYNC

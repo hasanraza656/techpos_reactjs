@@ -88,6 +88,8 @@ export function CashierPage() {
   const [practice, setPractice] = useState(false);
   const [compact, setCompact] = useState(false);
   const [mobileCart, setMobileCart] = useState(false);
+  // Short screens collapse subtotal/discount/tax behind a toggle (CSS-only elsewhere).
+  const [breakdown, setBreakdown] = useState(false);
   const [receipt, setReceipt] = useState<LocalReceipt | null>(null);
   const [pending, setPending] = useState(0);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
@@ -101,7 +103,14 @@ export function CashierPage() {
   const receiptRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
-  const lastScan = useRef({ code: "", time: 0 });
+  // One Enter = one add. `scanEdit` counts edits of the scan field; a submit consumes the
+  // current count, so a repeated Enter/Find for the same typed text (key repeat, CR+LF
+  // scanner suffix, impatient second press while the lookup is slow) is ignored.
+  const scanEdit = useRef(0);
+  const scanConsumed = useRef(-1);
+  // Bumped whenever the cart is replaced (sale finished, held, resumed, cleared, loaded) so a
+  // lookup still in flight cannot add its product to the next customer's cart.
+  const saleEpoch = useRef(0);
   const cartKey = `${o.branch}:${o.warehouse}`;
   const scopeKey = `${user}:${tenant}:${cartKey}`;
   const ready = hydratedScope === scopeKey;
@@ -150,6 +159,7 @@ export function CashierPage() {
     ])
       .then(([saved, prefs, tutorial]) => {
         if (cancelled) return;
+        saleEpoch.current++;
         setCart(saved?.lines ?? []);
         setCustomer(saved?.customer ?? null);
         setDiscount(saved?.discount ?? "0.00");
@@ -259,7 +269,7 @@ export function CashierPage() {
     networkMode: "always",
     retry: false,
   });
-  const add = useCallback((p: Product, qty = "1.000") => {
+  const add = useCallback((p: Product, qty = "1.000", clearSearch = true) => {
     setError(undefined);
     setCart((current) => {
       const old = current.find((l) => l.product.public_id === p.public_id);
@@ -280,16 +290,25 @@ export function CashierPage() {
     setRecent((current) =>
       [p.public_id, ...current.filter((id) => id !== p.public_id)].slice(0, 30),
     );
-    setSearch("");
+    if (clearSearch) setSearch("");
     scanner.current?.focus();
   }, []);
   async function scan() {
     const code = search.trim();
     if (!code) return;
-    const now = performance.now();
-    if (lastScan.current.code === code && now - lastScan.current.time < 90)
-      return;
-    lastScan.current = { code, time: now };
+    const token = scanEdit.current;
+    if (scanConsumed.current === token) return;
+    scanConsumed.current = token;
+    const epoch = saleEpoch.current;
+    // Clear at once so the next scan types into an empty field even while this lookup is
+    // slow; on failure the text comes back (unless the cashier already typed something new).
+    const typed = search;
+    setSearch("");
+    const fail = (e: unknown) => {
+      if (scanConsumed.current === token) scanConsumed.current = -1;
+      if (scanEdit.current === token) setSearch(typed);
+      setError(e);
+    };
     try {
       let matches: Product[];
       if (!online)
@@ -313,9 +332,21 @@ export function CashierPage() {
               }),
           )
         ).data;
+      if (epoch !== saleEpoch.current) {
+        fail(
+          new Error(
+            `The sale changed before "${code}" was found. Scan it again if it belongs to this sale.`,
+          ),
+        );
+        return;
+      }
       if (matches.length === 1) {
         const p = matches[0];
-        add(p, p.barcodes.find((b) => b.barcode === code)?.quantity ?? "1.000");
+        add(
+          p,
+          p.barcodes.find((b) => b.barcode === code)?.quantity ?? "1.000",
+          false,
+        );
       } else if (
         // Only trust the visible results when they belong to this exact text;
         // a fast scan can submit before the debounced search catches up.
@@ -323,15 +354,15 @@ export function CashierPage() {
         !products.isPlaceholderData &&
         products.data?.length === 1
       )
-        add(products.data[0]);
+        add(products.data[0], "1.000", false);
       else
-        setError(
+        fail(
           new Error(
             "No exact barcode match. Choose a product from the search results.",
           ),
         );
     } catch (e) {
-      setError(e);
+      fail(e);
     }
   }
   function quantity(id: string, delta: string) {
@@ -481,6 +512,13 @@ export function CashierPage() {
         change_due: formatted(paid - scaled(value.total)),
         amount_tendered: formatted(paid),
         channel: payload.channel ?? "online",
+        customer: customer
+          ? {
+              public_id: customer.public_id,
+              name: customer.name,
+              phone: customer.phone,
+            }
+          : null,
         lines: lines.map((l, i) => ({
           name: l.product.name,
           sku: l.product.sku,
@@ -509,6 +547,7 @@ export function CashierPage() {
           status: "pending",
           createdAt: new Date().toISOString(),
         });
+        saleEpoch.current++;
         setCart([]);
         setDiscount("0.00");
         setCustomer(null);
@@ -524,6 +563,7 @@ export function CashierPage() {
         );
       if (!online) await readSnapshot(user, tenant, "operations");
       const saved = await persistSale(tenant, user, payload, document, cartKey);
+      saleEpoch.current++;
       setCart([]);
       setDiscount("0.00");
       setCustomer(null);
@@ -792,12 +832,12 @@ export function CashierPage() {
           ))
         )}
       </div>
-      <div className="cart-summary">
-        <div>
+      <div className={`cart-summary ${breakdown ? "breakdown-open" : ""}`}>
+        <div className="summary-row">
           <span>Marked subtotal</span>
           <span>{totals.value?.subtotal ?? "—"}</span>
         </div>
-        <div>
+        <div className="summary-row">
           <button
             className="text-button"
             disabled={!o.permissions.includes("sales.discount")}
@@ -815,7 +855,7 @@ export function CashierPage() {
               : "—"}
           </span>
         </div>
-        <div>
+        <div className="summary-row">
           <span>Tax breakdown</span>
           <span>{totals.value?.tax_total ?? "—"}</span>
         </div>
@@ -823,6 +863,14 @@ export function CashierPage() {
           <strong>
             Total <small>{o.business.tenant.currency}</small>
           </strong>
+          <button
+            type="button"
+            className="text-button breakdown-toggle"
+            aria-expanded={breakdown}
+            onClick={() => setBreakdown((v) => !v)}
+          >
+            {breakdown ? "Hide details" : "Details"}
+          </button>
           <strong>{totals.value?.total ?? "—"}</strong>
         </div>
         <ErrorBox error={totals.error} />
@@ -931,7 +979,10 @@ export function CashierPage() {
               data-scanner
               aria-label="Scan barcode or search products"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                scanEdit.current++;
+                setSearch(e.target.value);
+              }}
               placeholder="Scan a barcode or search products…"
               autoComplete="off"
               enterKeyHint="search"
@@ -1168,6 +1219,7 @@ export function CashierPage() {
         <button
           className="button full mt"
           onClick={() => {
+            saleEpoch.current++;
             setCart([]);
             setCustomer(null);
             setDiscount("0.00");
@@ -1196,6 +1248,7 @@ export function CashierPage() {
           discount={discount}
           online={online}
           onHold={() => {
+            saleEpoch.current++;
             setCart([]);
             setCustomer(null);
             setDiscount("0.00");
@@ -1203,6 +1256,7 @@ export function CashierPage() {
             notify("Cart held.");
           }}
           onResume={(lines, c, d) => {
+            saleEpoch.current++;
             setCart(lines);
             setCustomer(c);
             setDiscount(d);

@@ -1800,14 +1800,178 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow);
+  /* Last resort on very short screens: the panel scrolls instead of spilling over the footer. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
+.cashier-cart > * {
+  flex-shrink: 0;
+}
+/* The line list is the only part that gives up height; totals and Take payment stay pinned. */
 .cashier-cart .cart-items {
-  flex: 1;
-  min-height: 140px;
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: none;
 }
 .cashier-cart .cart-summary {
   flex-shrink: 0;
+}
+.breakdown-toggle {
+  display: none !important;
+}
+@media (min-width: 1001px) and (max-height: 800px) {
+  .cashier-cart {
+    top: calc(var(--topbar-h) + 8px);
+    max-height: calc(100dvh - var(--topbar-h) - 16px);
+    padding: 12px 14px;
+  }
+  .cashier-cart .cart-heading {
+    margin-bottom: 6px;
+  }
+  .cashier-cart .cart-heading h2 {
+    font-size: 16px;
+  }
+  .cashier-cart .customer-selector {
+    padding: 6px 12px;
+    font-size: 13.5px;
+  }
+  .cashier-cart .cart-items {
+    margin: 4px -4px;
+    min-height: 64px;
+  }
+}
+/* Laptop heights: denser cart lines so several stay visible next to the pinned totals. */
+@media (min-width: 1001px) and (max-height: 920px) {
+  .cashier-cart .cart-line {
+    padding: 6px 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+  }
+  /* name row and SKU line full width; stepper, discount and line total share one row */
+  .cashier-cart .cart-line > .row,
+  .cashier-cart .cart-line > small {
+    flex-basis: 100%;
+  }
+  .cashier-cart .cart-line > .row .icon-button,
+  .cashier-cart .cart-heading .icon-button {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 6px;
+  }
+  .cashier-cart .cart-line-bottom {
+    display: contents;
+  }
+  .cashier-cart .cart-line-bottom > .quantity-stepper {
+    order: 1;
+    margin-top: 4px;
+  }
+  .cashier-cart .cart-line-bottom > strong {
+    order: 3;
+    margin-left: auto;
+    margin-top: 4px;
+  }
+  .cashier-cart .cart-line > .line-discount {
+    order: 2;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .cashier-cart .line-discount input {
+    width: 68px;
+  }
+  .cashier-cart .cart-line strong {
+    font-size: 14px;
+  }
+  .cashier-cart .cart-line small {
+    font-size: 12px;
+  }
+  .cashier-cart .quantity-stepper button,
+  .cashier-cart .quantity-stepper input {
+    min-height: 32px;
+  }
+  .cashier-cart .quantity-stepper button {
+    width: 34px;
+  }
+  .cashier-cart .line-discount {
+    margin-top: 4px;
+  }
+  .cashier-cart .line-discount input {
+    min-height: 28px;
+    padding: 3px 8px;
+  }
+}
+/* Short screens: collapse the breakdown behind "Details" and tighten totals/actions. */
+@media (min-width: 1001px) and (max-height: 800px) {
+  .cashier-cart .cart-summary {
+    padding-top: 6px;
+  }
+  .cashier-cart .cart-summary > div:not(.alert) {
+    font-size: 13.5px;
+    margin-bottom: 4px;
+  }
+  .cashier-cart .cart-summary:not(.breakdown-open) > .summary-row {
+    display: none;
+  }
+  .cashier-cart .breakdown-toggle {
+    display: inline-flex !important;
+    margin-left: auto;
+    margin-right: 10px;
+    font-size: 12.5px;
+  }
+  .cashier-cart .cart-total {
+    padding: 6px 0 0;
+  }
+  .cashier-cart .cart-total strong {
+    font-size: 22px;
+  }
+  .cashier-cart .pay-button {
+    min-height: 44px;
+    padding: 10px 14px !important;
+    margin: 4px 0 2px;
+    font-size: 16px !important;
+  }
+  .cashier-cart .cart-summary > .row {
+    margin-bottom: 0;
+  }
+  .cashier-cart .cart-summary > .row .text-button {
+    font-size: 13px;
+    padding: 3px 0;
+  }
+}
+/* Very short (≈500px browser viewport): squeeze the remaining chrome for ~2 visible lines. */
+@media (min-width: 1001px) and (max-height: 560px) {
+  .cashier-cart {
+    top: calc(var(--topbar-h) + 6px);
+    max-height: calc(100dvh - var(--topbar-h) - 12px);
+    padding: 8px 12px;
+  }
+  .cashier-cart .cart-heading {
+    margin-bottom: 4px;
+  }
+  .cashier-cart .customer-selector {
+    padding: 4px 12px;
+  }
+  .cashier-cart .cart-line {
+    padding: 4px 0;
+  }
+  .cashier-cart .cart-line > .row .icon-button,
+  .cashier-cart .cart-heading .icon-button {
+    min-width: 26px;
+    min-height: 26px;
+    padding: 4px;
+  }
+  .cashier-cart .quantity-stepper button,
+  .cashier-cart .quantity-stepper input {
+    min-height: 30px;
+  }
+  .cashier-cart .cart-total strong {
+    font-size: 20px;
+  }
+  .cashier-cart .pay-button {
+    min-height: 40px;
+    padding: 8px 14px !important;
+  }
 }
 .scanner-search {
   flex-wrap: nowrap;
@@ -2626,6 +2790,19 @@ tbody tr:hover {
   .cashier .dialog,
   .dialog:has(.cart-items) {
     padding: 20px;
+  }
+  /* Mobile/tablet cart sheet: only the line list scrolls; totals and Take payment stay visible. */
+  .dialog:has(> .cart-items) {
+    display: flex;
+    flex-direction: column;
+  }
+  .dialog:has(> .cart-items) > * {
+    flex-shrink: 0;
+  }
+  .dialog:has(> .cart-items) > .cart-items {
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: none;
   }
 }
 @media (max-width: 600px) {

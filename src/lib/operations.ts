@@ -99,6 +99,8 @@ export type SaleDocument = {
   amount_tendered: string;
   cost_total?: string;
   channel: string;
+  /** Null/absent for walk-in sales. Local offline receipts may carry it too. */
+  customer?: { public_id?: string; name: string; phone?: string | null } | null;
   lines: {
     name: string;
     product?: string;

@@ -73,14 +73,19 @@ export function useShortcuts(
 ) {
   useEffect(() => {
     function handler(event: KeyboardEvent) {
-      if (
-        event.repeat ||
-        event.metaKey ||
-        event.altKey ||
-        event.shiftKey ||
-        blocked
-      )
-        return;
+      if (event.metaKey || event.altKey || event.shiftKey) return;
+      const key =
+        (event.ctrlKey ? "Ctrl+" : "") +
+        (event.key.length === 1 ? event.key.toUpperCase() : event.key);
+      const action = (Object.entries(map) as [ShortcutAction, string][]).find(
+        ([, shortcut]) => shortcut === key,
+      )?.[0];
+      if (!action) return;
+      // A mapped function key never falls through to the browser (F5 reload, F7 caret
+      // browsing prompt), even while the action itself is blocked or focus is in a form field.
+      const functionKey = /^F\d+$/.test(key);
+      if (functionKey) event.preventDefault();
+      if (event.repeat || blocked) return;
       const target = event.target as HTMLElement;
       const typing =
         target instanceof HTMLInputElement ||
@@ -88,16 +93,8 @@ export function useShortcuts(
         target instanceof HTMLSelectElement ||
         target.isContentEditable;
       if (typing && !target.hasAttribute("data-scanner")) return;
-      const key =
-        (event.ctrlKey ? "Ctrl+" : "") +
-        (event.key.length === 1 ? event.key.toUpperCase() : event.key);
-      const action = (Object.entries(map) as [ShortcutAction, string][]).find(
-        ([, shortcut]) => shortcut === key,
-      )?.[0];
-      if (action) {
-        event.preventDefault();
-        actions[action]();
-      }
+      event.preventDefault();
+      actions[action]();
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
