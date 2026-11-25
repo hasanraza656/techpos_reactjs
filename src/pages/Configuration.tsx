@@ -67,81 +67,83 @@ export function ModulesContent({ recommended }: { recommended?: string[] }) {
         />
       </div>
       <ErrorBox error={toggle.error} />
-      {[...new Set(list.map((m) => m.category))].map((category) => (
-        <section key={category} className="module-category">
-          <h3>{category}</h3>
-          <div className="cards-grid">
-            {list
-              .filter((m) => m.category === category)
-              .map((m) => (
-                <article className="module-card" key={m.key}>
-                  <div className="row between">
-                    <span
-                      className={`module-icon ${m.included ? "" : "locked"}`}
-                    >
-                      {m.included ? (
-                        <Settings2 size={20} />
-                      ) : (
-                        <LockKeyhole size={20} />
-                      )}
-                    </span>
-                    <span
-                      className={m.enabled ? "status-pill" : "neutral-pill"}
-                    >
-                      {m.enabled
-                        ? "Enabled"
-                        : m.included
-                          ? "Included"
-                          : "Available on upgrade"}
-                    </span>
-                  </div>
-                  <h3>{m.name}</h3>
-                  {m.availability === "planned" && (
-                    <p className="module-roadmap-note">
-                      Workflow in development. This setting saves a preference;
-                      it does not unlock a working screen.
-                    </p>
-                  )}
-                  {m.availability === "partial" && (
-                    <p className="module-roadmap-note">
-                      Some workflows are available. Additional capabilities are
-                      still in development.
-                    </p>
-                  )}
-                  {m.requires_configuration && (
-                    <p className="muted">Requires configuration</p>
-                  )}
-                  {!!m.dependencies.length && (
-                    <small className="muted">
-                      Depends on {m.dependencies.join(", ")}
-                    </small>
-                  )}
-                  <div className="module-action">
-                    {m.included ? (
-                      <button
-                        className="text-button"
-                        disabled={
-                          toggle.isPending ||
-                          !business.permissions.includes("modules.manage")
-                        }
-                        onClick={() =>
-                          m.enabled ? setConfirm(m) : toggle.mutate(m)
-                        }
+      <div className="module-categories">
+        {[...new Set(list.map((m) => m.category))].map((category) => (
+          <section key={category} className="module-category">
+            <h3>{category}</h3>
+            <div className="cards-grid">
+              {list
+                .filter((m) => m.category === category)
+                .map((m) => (
+                  <article className="module-card" key={m.key}>
+                    <div className="row between">
+                      <span
+                        className={`module-icon ${m.included ? "" : "locked"}`}
                       >
-                        {m.enabled ? "Disable module" : "Enable module"}
-                      </button>
-                    ) : (
-                      <Link to="/subscription">
-                        Compare plans
-                        <ArrowRight size={14} />
-                      </Link>
+                        {m.included ? (
+                          <Settings2 size={20} />
+                        ) : (
+                          <LockKeyhole size={20} />
+                        )}
+                      </span>
+                      <span
+                        className={m.enabled ? "status-pill" : "neutral-pill"}
+                      >
+                        {m.enabled
+                          ? "Enabled"
+                          : m.included
+                            ? "Included"
+                            : "Available on upgrade"}
+                      </span>
+                    </div>
+                    <h3>{m.name}</h3>
+                    {m.availability === "planned" && (
+                      <p className="module-roadmap-note">
+                        Workflow in development. This setting saves a
+                        preference; it does not unlock a working screen.
+                      </p>
                     )}
-                  </div>
-                </article>
-              ))}
-          </div>
-        </section>
-      ))}
+                    {m.availability === "partial" && (
+                      <p className="module-roadmap-note">
+                        Some workflows are available. Additional capabilities
+                        are still in development.
+                      </p>
+                    )}
+                    {m.requires_configuration && (
+                      <p className="muted">Requires configuration</p>
+                    )}
+                    {!!m.dependencies.length && (
+                      <small className="muted">
+                        Depends on {m.dependencies.join(", ")}
+                      </small>
+                    )}
+                    <div className="module-action">
+                      {m.included ? (
+                        <button
+                          className="text-button"
+                          disabled={
+                            toggle.isPending ||
+                            !business.permissions.includes("modules.manage")
+                          }
+                          onClick={() =>
+                            m.enabled ? setConfirm(m) : toggle.mutate(m)
+                          }
+                        >
+                          {m.enabled ? "Disable module" : "Enable module"}
+                        </button>
+                      ) : (
+                        <Link to="/subscription">
+                          Compare plans
+                          <ArrowRight size={14} />
+                        </Link>
+                      )}
+                    </div>
+                  </article>
+                ))}
+            </div>
+          </section>
+        ))}
+      </div>
       {!list.length && <p className="empty">No matching modules.</p>}
       <Modal
         open={!!confirm}

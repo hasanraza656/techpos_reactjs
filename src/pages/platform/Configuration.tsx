@@ -30,8 +30,9 @@ export function PlansPage() {
           const prices = (plan.prices ?? []) as Row[];
           // The editor and backend update the monthly PKR price specifically.
           const price =
-            prices.find((x) => x.currency === "PKR" && x.interval === "month") ??
-            prices[0];
+            prices.find(
+              (x) => x.currency === "PKR" && x.interval === "month",
+            ) ?? prices[0];
           return (
             <article className="panel" key={value(plan, "key")}>
               <span className="eyebrow">{value(plan, "key")}</span>
@@ -194,64 +195,79 @@ export function SettingsPage() {
         )}
       </section>
       <div className="platform-role-grid mt">
-        {methods.data?.map((m) => (
-          <article key={String(m.id)} className="panel">
-            <h3>{value(m, "name")}</h3>
-            <Status status={m.active ? "active" : "inactive"} />
-            {Object.entries((m.details ?? {}) as Row).map(([k, v]) => (
-              <p key={k}>
-                <small>{title(k)}</small>
-                <strong className="table-subtext">{String(v)}</strong>
-              </p>
-            ))}
-            {can && (
-              <button
-                className="button secondary mt"
-                onClick={() =>
-                  p.open({
-                    title: "Edit payment instructions",
-                    endpoint: `payment-methods/${m.id}`,
-                    method: "PUT",
-                    initial: {
-                      name: m.name,
-                      active: !!m.active,
-                      ...Object.fromEntries(
-                        Object.entries((m.details ?? {}) as Row).map(([k, v]) => [
-                          "details." + k,
-                          v,
-                        ]),
-                      ),
-                    },
-                    fields: [
-                      {
-                        key: "name",
-                        label: "Payment method name",
-                        required: true,
+        {methods.data?.map((m) => {
+          // Wallets (JazzCash, Easypaisa) have no bank; only the bank transfer method asks for one.
+          const wallet = m.key !== "bank";
+          const details = (m.details ?? {}) as Row;
+          const shown: [string, string][] = [
+            ...(wallet ? [] : ([["bank", "Bank"]] as [string, string][])),
+            ["account_number", wallet ? "Wallet number" : "Account number"],
+            ["account_holder", "Account holder"],
+          ];
+          return (
+            <article key={String(m.id)} className="panel">
+              <h3>{value(m, "name")}</h3>
+              <Status status={m.active ? "active" : "inactive"} />
+              {shown.map(([k, label]) => (
+                <p key={k}>
+                  <small>{label}</small>
+                  <strong className="table-subtext">
+                    {String(details[k] ?? "").trim() || (
+                      <span className="muted">Not set</span>
+                    )}
+                  </strong>
+                </p>
+              ))}
+              {can && (
+                <button
+                  className="button secondary mt"
+                  onClick={() =>
+                    p.open({
+                      title: "Edit payment instructions",
+                      endpoint: `payment-methods/${m.id}`,
+                      method: "PUT",
+                      initial: {
+                        name: m.name,
+                        active: !!m.active,
+                        ...Object.fromEntries(
+                          Object.entries(details)
+                            .filter(([k]) => !(wallet && k === "bank"))
+                            .map(([k, v]) => ["details." + k, v]),
+                        ),
                       },
-                      {
-                        key: "active",
-                        label: "Available to clients",
-                        type: "checkbox",
-                      },
-                      { key: "details.bank", label: "Bank name" },
-                      {
-                        key: "details.account_number",
-                        label: "Account / wallet number",
-                        required: true,
-                      },
-                      {
-                        key: "details.account_holder",
-                        label: "Account holder",
-                      },
-                    ],
-                  })
-                }
-              >
-                Edit instructions
-              </button>
-            )}
-          </article>
-        ))}
+                      fields: [
+                        {
+                          key: "name",
+                          label: "Payment method name",
+                          required: true,
+                        },
+                        {
+                          key: "active",
+                          label: "Available to clients",
+                          type: "checkbox",
+                        },
+                        ...(wallet
+                          ? []
+                          : [{ key: "details.bank", label: "Bank name" }]),
+                        {
+                          key: "details.account_number",
+                          label: wallet ? "Wallet number" : "Account number",
+                          required: true,
+                        },
+                        {
+                          key: "details.account_holder",
+                          label: "Account holder",
+                        },
+                      ],
+                    })
+                  }
+                >
+                  Edit instructions
+                </button>
+              )}
+            </article>
+          );
+        })}
       </div>
     </>
   );

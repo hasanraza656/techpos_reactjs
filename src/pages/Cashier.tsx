@@ -1136,7 +1136,7 @@ export function CashierPage() {
       <Modal
         open={mobileCart}
         onOpenChange={setMobileCart}
-        title="Current sale"
+        title={`Current sale (${cart.length})`}
         description="Review items and complete payment."
       >
         {cartView}

@@ -1973,6 +1973,26 @@ tbody tr:hover {
     padding: 8px 14px !important;
   }
 }
+/* Touch screens (tablets, touch laptops) keep finger-sized targets even when the cart is compacted. */
+@media (pointer: coarse) {
+  .cashier-cart .cart-line > .row .icon-button,
+  .cashier-cart .cart-heading .icon-button,
+  .cashier-cart .quantity-stepper button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .cashier-cart .quantity-stepper input,
+  .cashier-cart .line-discount input {
+    min-height: 44px;
+  }
+}
+/* The cart sheet dialog already says "Current sale"; keep only the clear button from the cart heading. */
+.dialog .cart-heading h2 {
+  display: none;
+}
+.dialog .cart-heading {
+  justify-content: flex-end;
+}
 .scanner-search {
   flex-wrap: nowrap;
   background: var(--surface);
@@ -3141,6 +3161,10 @@ tbody tr:hover {
 .setup-main .module-card { padding: 19px; }
 .setup-main .module-card h3 { font-size: 14px; }
 .setup-main .module-category > h3 { font-size: 12px; text-transform: capitalize; letter-spacing: .4px; }
+/* Setup shows few modules per category: flow categories side by side instead of one narrow card per row. */
+.setup-main .module-categories { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0 18px; align-items: start; }
+.setup-main .module-categories .module-category { margin: 16px 0; min-width: 0; }
+.setup-main .module-categories .cards-grid { grid-template-columns: 1fr; gap: 12px; }
 .setup-complete { text-align: center; padding: 4px 0 26px; }
 .setup-success-icon { display: grid; place-items: center; width: 70px; height: 70px; background: var(--soft); color: var(--green); border-radius: 50%; margin: 0 auto 15px; }
 .setup-complete h3 { font: 700 23px/1.4 var(--font-display); letter-spacing: -.6px; margin: 0 0 8px; }

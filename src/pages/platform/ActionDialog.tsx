@@ -112,9 +112,15 @@ export function ActionDialog({
               ) : (
                 <label
                   key={f.key}
-                  className={f.type === "textarea" ? "span-two" : ""}
+                  className={
+                    f.type === "textarea"
+                      ? "span-two"
+                      : f.type === "checkbox"
+                        ? "check-label span-two"
+                        : ""
+                  }
                 >
-                  {f.label}
+                  {f.type !== "checkbox" && f.label}
                   {f.type === "select" ? (
                     <select
                       aria-label={f.label}
@@ -139,12 +145,15 @@ export function ActionDialog({
                       onChange={(e) => set(f.key, e.target.value)}
                     />
                   ) : f.type === "checkbox" ? (
-                    <input
-                      type="checkbox"
-                      checked={!!values[f.key]}
-                      disabled={busy}
-                      onChange={(e) => set(f.key, e.target.checked)}
-                    />
+                    <>
+                      <input
+                        type="checkbox"
+                        checked={!!values[f.key]}
+                        disabled={busy}
+                        onChange={(e) => set(f.key, e.target.checked)}
+                      />
+                      <span>{f.label}</span>
+                    </>
                   ) : (
                     <input
                       type={f.type ?? "text"}

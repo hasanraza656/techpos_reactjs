@@ -20,6 +20,7 @@ import {
   Search,
   Settings2,
   Shield,
+  Store,
   Users,
   Wallet,
   X,
@@ -236,6 +237,13 @@ export function PlatformPage() {
               </span>
             </div>
             <div className="row">
+              {/* Admins who also own or work in a business can jump back to it. */}
+              {me.data?.tenants.some((t) => t.status === "active") && (
+                <Link to="/" className="text-button">
+                  <Store size={15} />
+                  My business
+                </Link>
+              )}
               <Link to="/account" className="text-button">
                 <Shield size={15} />
                 Account security
