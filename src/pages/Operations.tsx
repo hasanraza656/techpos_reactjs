@@ -6,8 +6,9 @@ import { useWorkspace } from "../App";
 import { useOperations } from "../hooks/useOperations";
 import { businessStore } from "../lib/offline";
 import type { LocalReceipt } from "../lib/offline";
-import { ops, query } from "../lib/operations";
+import { anyBranchGrant, creditAccess, ops, query } from "../lib/operations";
 import type { Page, Customer } from "../lib/operations";
+import { CustomerKhata } from "../components/CustomerKhata";
 import { json } from "../lib/api";
 import { retryAttention, syncSales } from "../lib/posStorage";
 import { encryptRecovery, importRecovery } from "../lib/recovery";
@@ -27,6 +28,12 @@ export function CustomersPage() {
   }, [search]);
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
+  const [khata, setKhata] = useState<Customer | null>(null);
+  const credit = creditAccess(o.setup.data, o.permissions);
+  // Statement and adjustments are business-level; collecting money is per branch.
+  const manageAnywhere = anyBranchGrant(o.setup.data, "customers.credit_manage");
+  const showKhata =
+    manageAnywhere || anyBranchGrant(o.setup.data, "customers.collect");
   const list = useQuery({
     queryKey: [
       "customers",
@@ -107,6 +114,13 @@ export function CustomersPage() {
                     <th>Phone</th>
                     <th>Email</th>
                     <th>Price tier</th>
+                    {credit.feature && (
+                      <>
+                        <th>Balance</th>
+                        <th>Credit limit</th>
+                      </>
+                    )}
+                    {showKhata && <th>Khata</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -116,6 +130,29 @@ export function CustomersPage() {
                       <td>{c.phone ?? "—"}</td>
                       <td>{c.email ?? "—"}</td>
                       <td>{c.price_tier}</td>
+                      {credit.feature && (
+                        <>
+                          <td>{c.balance ?? "—"}</td>
+                          <td>
+                            {c.credit_limit === undefined
+                              ? "—"
+                              : c.credit_limit === "0.00"
+                                ? "Off"
+                                : c.credit_limit}
+                          </td>
+                        </>
+                      )}
+                      {showKhata && (
+                        <td>
+                          <button
+                            className="text-button"
+                            aria-label={`Open khata for ${c.name}`}
+                            onClick={() => setKhata(c)}
+                          >
+                            Open khata
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -161,6 +198,9 @@ export function CustomersPage() {
               address: f.get("address") || null,
               price_tier: f.get("price_tier"),
               marketing_consent: f.get("marketing_consent") === "on",
+              ...(credit.manage && f.get("credit_limit")
+                ? { credit_limit: f.get("credit_limit") }
+                : {}),
             });
           }}
         >
@@ -188,6 +228,18 @@ export function CustomersPage() {
               <option value="wholesale">Wholesale</option>
             </select>
           </label>
+          {credit.manage && (
+            <label>
+              Credit limit (khata)
+              <input
+                name="credit_limit"
+                inputMode="decimal"
+                pattern="\d{1,12}(\.\d{1,2})?"
+                title="Amount with up to 2 decimals. 0 keeps credit off."
+                placeholder="0.00 keeps credit off"
+              />
+            </label>
+          )}
           <label className="check-label">
             <input type="checkbox" name="marketing_consent" />
             Customer agreed to marketing contact
@@ -196,6 +248,36 @@ export function CustomersPage() {
             Save customer
           </button>
         </form>
+      </Modal>
+      <Modal
+        wide
+        open={!!khata}
+        onOpenChange={(v) => {
+          if (!v) setKhata(null);
+        }}
+        title={khata ? `Khata · ${khata.name}` : "Khata"}
+        description="Credit sales, payments and adjustments for this customer. Entries are permanent."
+      >
+        {khata && o.setup.data && (
+          <CustomerKhata
+            key={khata.public_id}
+            customer={khata}
+            setup={o.setup.data}
+            branch={o.branch}
+            business={{
+              name: o.business.tenant.name,
+              currency: o.business.tenant.currency,
+              timezone: o.business.tenant.timezone,
+            }}
+            canCollect={credit.collect}
+            canManage={manageAnywhere}
+            onChanged={() => {
+              client.invalidateQueries({ queryKey: ["customers"] });
+              client.invalidateQueries({ queryKey: ["customer-ledger"] });
+              client.invalidateQueries({ queryKey: ["operations-bootstrap"] });
+            }}
+          />
+        )}
       </Modal>
     </>
   );

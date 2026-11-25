@@ -47,9 +47,12 @@ export function Modal({
   title,
   description,
   children,
+  wide = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /** Statement-style dialogs with tables get more width on large screens. */
+  wide?: boolean;
   title: string;
   description: string;
   children: ReactNode;
@@ -58,7 +61,7 @@ export function Modal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog">
+        <Dialog.Content className={wide ? "dialog dialog-wide" : "dialog"}>
           <Dialog.Title>{title}</Dialog.Title>
           <Dialog.Description className="muted">
             {description}

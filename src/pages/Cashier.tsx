@@ -23,7 +23,13 @@ import {
 } from "lucide-react";
 import { useOperations } from "../hooks/useOperations";
 import { useCheckoutLease } from "../hooks/useCheckoutLease";
-import { ops, query } from "../lib/operations";
+import {
+  attemptKey,
+  creditAccess,
+  creditState,
+  ops,
+  query,
+} from "../lib/operations";
 import type {
   Product,
   CartLine,
@@ -34,7 +40,7 @@ import type {
 } from "../lib/operations";
 import { json, ApiError, useClient } from "../lib/api";
 import { businessStore } from "../lib/offline";
-import { readSnapshot } from "../lib/sessionCache";
+import { networkFailure, readSnapshot } from "../lib/sessionCache";
 import type { LocalReceipt } from "../lib/offline";
 import {
   cacheCatalog,
@@ -103,6 +109,11 @@ export function CashierPage() {
   const receiptRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
   const lock = useRef(false);
+  // Credit sales go straight to the server (never the offline outbox). An unchanged retry
+  // after a dropped connection reuses this key so the server cannot record it twice.
+  const creditAttempt = useRef<{ fingerprint: string; key: string } | null>(
+    null,
+  );
   // One Enter = one add. `scanEdit` counts edits of the scan field; a submit consumes the
   // current count, so a repeated Enter/Find for the same typed text (key repeat, CR+LF
   // scanner suffix, impatient second press while the lookup is slow) is ignored.
@@ -269,6 +280,45 @@ export function CashierPage() {
     networkMode: "always",
     retry: false,
   });
+  const credit = creditAccess(o.setup.data, o.permissions);
+  const creditLookup = (credit.sell || credit.collect) && !practice;
+  // The customer saved with the cart carries a balance snapshot; re-read it before payment.
+  const freshCustomer = useQuery({
+    queryKey: ["pos-customer-credit", tenant, o.branch, customer?.public_id],
+    queryFn: async ({ signal }) => {
+      const c = customer!;
+      const rows = await ops<Page<Customer>>(
+        "customers?" + query({ branch: o.branch, q: c.phone || c.name }),
+        { signal },
+      );
+      return rows.data.find((r) => r.public_id === c.public_id) ?? null;
+    },
+    enabled: o.ready && online && creditLookup && !!customer,
+    retry: false,
+  });
+  const creditCustomer =
+    freshCustomer.data && freshCustomer.data.public_id === customer?.public_id
+      ? freshCustomer.data
+      : customer;
+  const creditInfo = creditState(creditCustomer);
+  const creditTender =
+    credit.sell && !practice && online && !!customer && creditInfo.enabled
+      ? {
+          balance: formatted(creditInfo.balance),
+          available: formatted(creditInfo.available),
+          canOverride: credit.manage,
+        }
+      : null;
+  const creditNote =
+    !credit.sell || practice
+      ? ""
+      : !online
+        ? "Credit sales need a connection. Cash still works offline."
+        : !customer
+          ? "To sell on credit (khata), choose the customer first."
+          : !creditInfo.enabled
+            ? "Credit is off for this customer (limit 0). A credit manager can set a limit in Customers."
+            : "";
   const add = useCallback((p: Product, qty = "1.000", clearSearch = true) => {
     setError(undefined);
     setCart((current) => {
@@ -388,6 +438,8 @@ export function CashierPage() {
       return;
     }
     if (cart.length && !totals.error) {
+      if (customer && creditLookup && online)
+        freshCustomer.refetch().catch(() => {});
       setDialog("payment");
       setError(undefined);
     }
@@ -412,7 +464,10 @@ export function CashierPage() {
       setBusy(false);
     }
   }
-  async function finish(payments: SalePayload["payments"]) {
+  async function finish(
+    payments: SalePayload["payments"],
+    overrideReason?: string,
+  ) {
     if (
       !checkoutLease.held ||
       lock.current ||
@@ -450,7 +505,8 @@ export function CashierPage() {
       const cartDiscount = wireDecimal(discount, 2, 10, "Cart discount");
       payments = payments.map((p) => {
         const amount = wireDecimal(p.amount, 2, 10, "Payment amount");
-        if (p.method === "cash") return { method: p.method, amount };
+        if (p.method === "cash" || p.method === "credit")
+          return { method: p.method, amount };
         const reference = (p.reference ?? "").trim();
         if (!reference)
           throw new Error(
@@ -470,6 +526,20 @@ export function CashierPage() {
       for (const p of payments) paid += scaled(p.amount);
       if (paid < scaled(value.total))
         throw new Error("The tendered amount is below the total.");
+      const onCredit = payments.some((p) => p.method === "credit");
+      const approval = onCredit
+        ? checkCredit({
+            payments,
+            total: value.total,
+            online,
+            practice,
+            access: credit,
+            hasCustomer: !!customer,
+            info: creditInfo,
+            currency: o.business.tenant.currency,
+            overrideReason,
+          })
+        : undefined;
       if (!online && payments.some((p) => p.method !== "cash"))
         throw new Error("Only cash can be recorded offline in this milestone.");
       const cash = payments
@@ -494,7 +564,44 @@ export function CashierPage() {
         expected_total: value.total,
         payments,
         channel: online ? "online" : "offline",
+        ...(onCredit && approval
+          ? { credit_override_reason: approval }
+          : {}),
       };
+      if (onCredit) {
+        // Never queued offline: the khata balance and limit are checked by the server now.
+        const { idempotency_key: _, ...body } = payload;
+        payload.idempotency_key = attemptKey(creditAttempt, body);
+        let sale: SaleDocument;
+        try {
+          sale = await ops<SaleDocument>("sales", json("POST", payload));
+        } catch (e) {
+          if (networkFailure(e))
+            throw new Error(
+              "The connection dropped before the server confirmed this credit sale. Nothing was saved on this device and the cart is kept. Press Complete sale again when you are back online; the retry reuses the same sale reference, so it cannot be recorded twice.",
+            );
+          throw e;
+        }
+        creditAttempt.current = null;
+        saleEpoch.current++;
+        setCart([]);
+        setDiscount("0.00");
+        setCustomer(null);
+        setDialog(null);
+        setReceipt({
+          id: sale.public_id,
+          payload,
+          document: sale,
+          status: "synced",
+          createdAt: isoNow(),
+        });
+        client.invalidateQueries({ queryKey: ["pos-products"] });
+        client.invalidateQueries({ queryKey: ["operations-bootstrap"] });
+        client.invalidateQueries({ queryKey: ["pos-customer-credit"] });
+        client.invalidateQueries({ queryKey: ["pos-customers"] });
+        client.invalidateQueries({ queryKey: ["customers"] });
+        return;
+      }
       const document: SaleDocument = {
         public_id: id,
         receipt_number: `LOCAL-${id.slice(0, 8).toUpperCase()}`,
@@ -503,7 +610,7 @@ export function CashierPage() {
           o.setup.data.branches.find((b) => b.public_id === o.branch)?.name ??
           "",
         currency: o.business.tenant.currency,
-        finalized_at: new Date().toISOString(),
+        finalized_at: isoNow(),
         subtotal: value.subtotal,
         line_discount: value.line_discount,
         cart_discount: value.cart_discount,
@@ -545,7 +652,7 @@ export function CashierPage() {
             receipt_number: "PRACTICE · NO FINANCIAL RECORD",
           },
           status: "pending",
-          createdAt: new Date().toISOString(),
+          createdAt: isoNow(),
         });
         saleEpoch.current++;
         setCart([]);
@@ -714,11 +821,26 @@ export function CashierPage() {
       </div>
       <button
         className="customer-selector"
+        aria-label={
+          customer
+            ? `Customer ${customer.name}. Change customer`
+            : "Walk-in customer. Choose a customer"
+        }
         onClick={() => setDialog("customer")}
       >
-        {customer
-          ? `${customer.name} · ${customer.price_tier}`
-          : "Walk-in customer"}
+        <span className="customer-selector-text">
+          <span>
+            {customer
+              ? `${customer.name} · ${customer.price_tier}`
+              : "Walk-in customer"}
+          </span>
+          {customer && creditLookup && creditInfo.enabled && (
+            <small>
+              Khata {formatted(creditInfo.balance)} · available{" "}
+              {formatted(creditInfo.available)}
+            </small>
+          )}
+        </span>
         <Plus size={16} />
       </button>
       <div className="cart-items">
@@ -1162,6 +1284,8 @@ export function CashierPage() {
             busy={busy}
             online={online}
             error={error}
+            credit={creditTender}
+            creditNote={creditNote}
             onSubmit={finish}
           />
         )}
@@ -1202,6 +1326,7 @@ export function CashierPage() {
         <CustomerLookup
           branch={o.branch}
           online={online}
+          showCredit={creditLookup}
           onChoose={(c) => {
             setCustomer(c);
             setDialog(null);
@@ -1472,6 +1597,71 @@ export function CashierPage() {
   );
 }
 
+// Event-time timestamp for receipts (kept out of render code paths).
+function isoNow() {
+  return new Date().toISOString();
+}
+/**
+ * Client-side mirror of the server's credit (khata) rules. Throws a cashier-readable
+ * error, or returns the override reason to send when a credit manager exceeds the limit.
+ */
+function checkCredit({
+  payments,
+  total,
+  online,
+  practice,
+  access,
+  hasCustomer,
+  info,
+  currency,
+  overrideReason,
+}: {
+  payments: SalePayload["payments"];
+  total: string;
+  online: boolean;
+  practice: boolean;
+  access: { sell: boolean; manage: boolean };
+  hasCustomer: boolean;
+  info: { enabled: boolean; available: bigint };
+  currency: string;
+  overrideReason?: string;
+}): string | undefined {
+  const creditRows = payments.filter((p) => p.method === "credit");
+  if (!online) throw new Error("Credit sales need a connection.");
+  if (practice)
+    throw new Error("Practice mode does not record credit. Use cash.");
+  if (!access.sell)
+    throw new Error(
+      "You do not have permission to sell on credit in this branch.",
+    );
+  if (!hasCustomer)
+    throw new Error("Choose the customer before selling on credit.");
+  if (creditRows.length !== 1)
+    throw new Error("Use a single credit (khata) line.");
+  if (!info.enabled)
+    throw new Error(
+      "Credit is not enabled for this customer. Set a credit limit in Customers first.",
+    );
+  const onKhata = scaled(creditRows[0].amount);
+  const others = payments
+    .filter((p) => p.method !== "credit")
+    .reduce((a, p) => a + scaled(p.amount), 0n);
+  if (onKhata > scaled(total) - others)
+    throw new Error(
+      "Credit cannot be more than the amount still due. Credit never gives change.",
+    );
+  if (onKhata <= info.available) return undefined;
+  if (!access.manage)
+    throw new Error(
+      `Over the credit limit. Available credit: ${currency} ${formatted(info.available)}. Ask a manager to raise the limit.`,
+    );
+  const reason = overrideReason?.trim() ?? "";
+  if (reason.length < 5 || reason.length > 500)
+    throw new Error(
+      "Write an override reason of 5–500 characters to exceed the credit limit.",
+    );
+  return reason;
+}
 // Canonicalize a cashier-typed decimal ("5." -> "5.000") within the server's digit limits.
 function wireDecimal(
   value: string,
@@ -1490,6 +1680,8 @@ function PaymentForm({
   busy,
   online,
   error,
+  credit,
+  creditNote,
   onSubmit,
 }: {
   total: string;
@@ -1497,19 +1689,56 @@ function PaymentForm({
   busy: boolean;
   online: boolean;
   error: unknown;
-  onSubmit: (p: SalePayload["payments"]) => void;
+  /** Offered only online, with permission and a customer whose credit limit is above 0. */
+  credit: { balance: string; available: string; canOverride: boolean } | null;
+  creditNote: string;
+  onSubmit: (p: SalePayload["payments"], overrideReason?: string) => void;
 }) {
   const [rows, setRows] = useState<SalePayload["payments"]>([
     { method: "cash", amount: total },
   ]);
+  const [override, setOverride] = useState("");
   let paid = 0n;
+  let onKhata = 0n;
   let invalid = false;
   try {
-    for (const r of rows) paid += scaled(r.amount);
+    for (const r of rows) {
+      paid += scaled(r.amount);
+      if (r.method === "credit") onKhata += scaled(r.amount);
+    }
   } catch {
     invalid = true;
   }
   const change = paid - scaled(total);
+  const hasCredit = rows.some((r) => r.method === "credit");
+  const creditRows = rows.filter((r) => r.method === "credit").length;
+  const nonCredit = paid - onKhata;
+  const remaining = scaled(total) - nonCredit;
+  const overLimit =
+    hasCredit && !!credit && !invalid && onKhata > scaled(credit.available);
+  const reasonOk =
+    override.trim().length >= 5 && override.trim().length <= 500;
+  const creditProblem = !hasCredit
+    ? ""
+    : !online || !credit
+      ? "Credit sales need a connection."
+      : creditRows > 1
+        ? "Use a single credit (khata) line."
+        : !invalid && onKhata <= 0n
+          ? "Enter the amount to put on the khata."
+          : !invalid && change > 0n
+            ? "Credit never gives change. Lower the credit or the other amounts so they add up to the total exactly."
+            : overLimit && !credit.canOverride
+              ? `Over the credit limit. Available credit: ${currency} ${credit.available}. Ask a manager to raise the limit.`
+              : "";
+  const blocked = !!creditProblem || (overLimit && !reasonOk);
+  const putOnKhata = (amount: bigint) =>
+    setRows((items) => [
+      ...(amount === scaled(total)
+        ? []
+        : items.filter((r) => r.method !== "credit")),
+      { method: "credit", amount: formatted(amount) },
+    ]);
   const update = (
     index: number,
     patch: Partial<SalePayload["payments"][number]>,
@@ -1521,7 +1750,7 @@ function PaymentForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(rows);
+        onSubmit(rows, overLimit ? override.trim() : undefined);
       }}
     >
       <div className="payment-amount">
@@ -1548,12 +1777,24 @@ function PaymentForm({
                 <option value="bank_transfer">
                   Bank transfer (manual record)
                 </option>
+                {(credit || row.method === "credit") && (
+                  <option
+                    value="credit"
+                    disabled={!credit || (row.method !== "credit" && hasCredit)}
+                  >
+                    Credit (khata)
+                  </option>
+                )}
               </select>
             </label>
             <label>
-              Amount received
+              {row.method === "credit" ? "Amount on khata" : "Amount received"}
               <input
-                aria-label={`Amount received ${i + 1}`}
+                aria-label={
+                  row.method === "credit"
+                    ? `Amount on khata ${i + 1}`
+                    : `Amount received ${i + 1}`
+                }
                 autoFocus={i === 0}
                 required
                 inputMode="decimal"
@@ -1562,7 +1803,7 @@ function PaymentForm({
               />
             </label>
           </div>
-          {row.method !== "cash" && (
+          {row.method !== "cash" && row.method !== "credit" && (
             <label>
               External transaction reference
               <input
@@ -1629,15 +1870,79 @@ function PaymentForm({
       >
         + Split payment
       </button>
+      {credit && (
+        <div className="credit-actions">
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => putOnKhata(scaled(total))}
+          >
+            Full amount on khata
+          </button>
+          {!invalid && nonCredit > 0n && remaining > 0n && remaining !== onKhata && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => putOnKhata(remaining)}
+            >
+              Rest on khata ({formatted(remaining)})
+            </button>
+          )}
+          <small className="muted">
+            Khata {credit.balance} · available {currency} {credit.available}
+          </small>
+        </div>
+      )}
+      {!credit && creditNote && !hasCredit && (
+        <p className="muted credit-note">{creditNote}</p>
+      )}
+      {creditProblem && (
+        <div className="alert error compact" role="alert">
+          {creditProblem}
+        </div>
+      )}
+      {!creditProblem && overLimit && credit && (
+        <div className="alert warn compact" role="status">
+          <span>
+            Over the credit limit by {currency}{" "}
+            {formatted(onKhata - scaled(credit.available))}. Available credit:{" "}
+            {currency} {credit.available}. As a credit manager you can approve
+            it with a reason; the approval is audited.
+          </span>
+        </div>
+      )}
+      {!creditProblem && overLimit && credit?.canOverride && (
+        <label>
+          Override reason (5–500 characters)
+          <textarea
+            required
+            minLength={5}
+            maxLength={500}
+            rows={2}
+            value={override}
+            onChange={(e) => setOverride(e.target.value)}
+          />
+        </label>
+      )}
       <div className="payment-amount" role="status" aria-live="polite">
-        <span>{change >= 0n ? "Change due" : "Still due"}</span>
+        <span>
+          {change < 0n
+            ? "Still due"
+            : hasCredit
+              ? "Change due (cash only)"
+              : "Change due"}
+        </span>
         <strong>{formatted(change < 0n ? -change : change)}</strong>
       </div>
       <button
         className="button full pay-button"
-        disabled={busy || invalid || change < 0n}
+        disabled={busy || invalid || change < 0n || blocked}
       >
-        {busy ? "Saving securely…" : "Complete sale"}
+        {busy
+          ? hasCredit
+            ? "Saving credit sale…"
+            : "Saving securely…"
+          : "Complete sale"}
       </button>
     </form>
   );
@@ -1645,10 +1950,12 @@ function PaymentForm({
 function CustomerLookup({
   branch,
   online,
+  showCredit,
   onChoose,
 }: {
   branch: string;
   online: boolean;
+  showCredit: boolean;
   onChoose: (c: Customer | null) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -1686,19 +1993,28 @@ function CustomerLookup({
               No matching customers. Profiles can be added from Customers.
             </p>
           ) : (
-            customers.data.data.map((c) => (
-              <button
-                className="list-row customer-result"
-                key={c.public_id}
-                onClick={() => onChoose(c)}
-              >
-                <div>
-                  <strong>{c.name}</strong>
-                  <small>{c.phone ?? c.email ?? c.price_tier}</small>
-                </div>
-                <span className="neutral-pill">{c.price_tier}</span>
-              </button>
-            ))
+            customers.data.data.map((c) => {
+              const khata = creditState(c);
+              return (
+                <button
+                  className="list-row customer-result"
+                  key={c.public_id}
+                  onClick={() => onChoose(c)}
+                >
+                  <div>
+                    <strong>{c.name}</strong>
+                    <small>{c.phone ?? c.email ?? c.price_tier}</small>
+                    {showCredit && khata.enabled && (
+                      <small>
+                        Khata {formatted(khata.balance)} · available{" "}
+                        {formatted(khata.available)}
+                      </small>
+                    )}
+                  </div>
+                  <span className="neutral-pill">{c.price_tier}</span>
+                </button>
+              );
+            })
           )}
         </>
       ) : (

@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Printer } from "lucide-react";
 import { useOperations } from "../hooks/useOperations";
-import { ops, query } from "../lib/operations";
-import type { Page, SaleDocument } from "../lib/operations";
+import { methodLabel, ops, query } from "../lib/operations";
+import type { Page, ReturnResult, SaleDocument } from "../lib/operations";
 import type { Module } from "../lib/types";
 import { api, json } from "../lib/api";
 import { scaled, formatted } from "../lib/decimal";
@@ -208,14 +208,15 @@ function SaleDetail({
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<unknown>();
   const [returning, setReturning] = useState(false);
-  const [credit, setCredit] = useState<{
-    receipt_number: string;
-    total: string;
-  } | null>(null);
+  const [credit, setCredit] = useState<ReturnResult | null>(null);
   if (sale.error) return <ErrorBox error={sale.error} />;
   if (!sale.data) return <Loading />;
   const document = sale.data;
-  const cashOnly = document.payments.every((p) => p.method === "cash");
+  // Cash and khata credit tenders are refundable; external card/bank tenders are not yet.
+  const cashOnly = document.payments.every(
+    (p) => p.method === "cash" || p.method === "credit",
+  );
+  const onCredit = document.payments.some((p) => p.method === "credit");
   return (
     <>
       <ErrorBox error={error} />
@@ -235,13 +236,21 @@ function SaleDetail({
       </button>
       {credit && (
         <div className="alert mt" role="status">
-          Cash credit note {credit.receipt_number} · {document.currency}{" "}
+          Credit note {credit.receipt_number} · {document.currency}{" "}
           {credit.total}. Return recorded once.
+          {(credit.credit_amount !== undefined ||
+            credit.cash_amount !== undefined) && (
+            <>
+              <br />
+              Taken off the customer’s khata: {credit.credit_amount ?? "0.00"}{" "}
+              · Cash paid out: {credit.cash_amount ?? credit.total}
+            </>
+          )}
         </div>
       )}
       {canReturn && (
         <section className="mt">
-          <h3>Cash return</h3>
+          <h3>{onCredit ? "Return" : "Cash return"}</h3>
           <ErrorBox error={modules.error} />
           {!cashOnly ? (
             <p className="muted">
@@ -262,6 +271,7 @@ function SaleDetail({
             <ReturnForm
               sale={document}
               shift={shift}
+              onCredit={onCredit}
               onSaved={async (r) => {
                 setReturning(false);
                 setCredit(r);
@@ -273,6 +283,8 @@ function SaleDetail({
                   client.invalidateQueries({ queryKey: ["report-summary"] }),
                   client.invalidateQueries({ queryKey: ["products"] }),
                   client.invalidateQueries({ queryKey: ["pos-products"] }),
+                  client.invalidateQueries({ queryKey: ["customers"] }),
+                  client.invalidateQueries({ queryKey: ["customer-ledger"] }),
                 ]);
               }}
             />
@@ -281,7 +293,7 @@ function SaleDetail({
               className="button secondary full mt"
               onClick={() => setReturning(true)}
             >
-              Record cash return
+              {onCredit ? "Record return" : "Record cash return"}
             </button>
           )}
         </section>
@@ -292,11 +304,13 @@ function SaleDetail({
 function ReturnForm({
   sale,
   shift,
+  onCredit,
   onSaved,
 }: {
   sale: SaleDocument;
   shift: string;
-  onSaved: (r: { receipt_number: string; total: string }) => void;
+  onCredit: boolean;
+  onSaved: (r: ReturnResult) => void;
 }) {
   const [key] = useState(crypto.randomUUID());
   const [reason, setReason] = useState("");
@@ -317,7 +331,7 @@ function ReturnForm({
             ]
           : [],
       );
-      return ops<{ receipt_number: string; total: string }>(
+      return ops<ReturnResult>(
         `sales/${sale.public_id}/returns`,
         json("POST", { idempotency_key: key, shift, reason, lines }),
       );
@@ -395,11 +409,17 @@ function ReturnForm({
       </label>
       <p className="muted">
         The server calculates the refund from original quantities, discounts and
-        tax. Unrestocked goods keep their original cost expense. This records
-        cash paid out from your open shift.
+        tax. Unrestocked goods keep their original cost expense.{" "}
+        {onCredit
+          ? "Because this sale used credit, the refund first reduces the customer’s khata balance (up to the credit on this sale not already returned, and never below a zero balance); any remainder is cash paid out from your open shift."
+          : "This records cash paid out from your open shift."}
       </p>
       <button className="button full mt" disabled={save.isPending}>
-        {save.isPending ? "Recording…" : "Confirm cash refund"}
+        {save.isPending
+          ? "Recording…"
+          : onCredit
+            ? "Confirm return"
+            : "Confirm cash refund"}
       </button>
     </form>
   );
@@ -418,6 +438,11 @@ type Summary = {
   cost_of_goods_sold?: string;
   gross_profit?: string;
   payments_net: Record<string, string>;
+  /** Customer credit (khata) fields; absent before the feature existed. */
+  credit_sales?: string;
+  credit_returns?: string;
+  credit_collections?: string;
+  credit_collections_cash?: string;
   note: string;
 };
 export function ReportsPage() {
@@ -495,12 +520,30 @@ export function ReportsPage() {
                       ["Gross profit", r.gross_profit],
                     ]
                   : []),
-              ].map(([label, value]) => (
+                ...(r.credit_sales !== undefined
+                  ? [["Credit sales (khata)", r.credit_sales]]
+                  : []),
+                ...(r.credit_returns !== undefined
+                  ? [["Returns to khata", r.credit_returns]]
+                  : []),
+                ...(r.credit_collections !== undefined
+                  ? [
+                      [
+                        "Collections received",
+                        r.credit_collections,
+                        r.credit_collections_cash !== undefined
+                          ? `Cash into drawers: ${r.currency} ${r.credit_collections_cash}`
+                          : "",
+                      ],
+                    ]
+                  : []),
+              ].map(([label, value, hint]) => (
                 <article className="stat" key={label}>
                   <span>{label}</span>
                   <strong className="stat-small">
                     {r.currency} {value}
                   </strong>
+                  {hint && <small>{hint}</small>}
                 </article>
               ))}
             </div>
@@ -520,7 +563,7 @@ export function ReportsPage() {
               </div>
               {Object.entries(r.payments_net).map(([method, value]) => (
                 <div className="detail-row" key={method}>
-                  <span>{method.replaceAll("_", " ")} · net recorded</span>
+                  <span>{methodLabel(method)} · net recorded</span>
                   <strong>{value}</strong>
                 </div>
               ))}
